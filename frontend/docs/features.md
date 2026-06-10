@@ -8,15 +8,10 @@
 ## MVP UI Scope
 
 - Primary surface: insight dashboard (core product experience).
-- Landing page
+- Landing page (supporting surface)
   - Hero with value proposition
   - Key features section
-  - Problems solved section
-  - Primary use cases section
-  - CTA section (`Analyze Channel`, `Get Started`)
-- Analyze page
-  - Channel URL input
-  - Analysis submission state
+  - CTA section (`Analyze Channel`)
 - Job status UI
   - `queued`, `running`, `completed`, `failed`
 - Insight dashboard
@@ -25,6 +20,9 @@
   - Content gaps
   - Niche leader comparison
   - Suggested video ideas
+- API integration
+  - `POST /api/analyze-channel`
+  - Polling `GET /api/analysis/:jobId`
 
 ## Visual/UX Goals
 

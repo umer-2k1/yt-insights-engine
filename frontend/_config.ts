@@ -1,10 +1,10 @@
 const config = {
   metadata: {
-    title: 'Vite React.js TypeScript & Shadcn/ui — Template',
+    title: 'YT Insight Engine',
     description:
-      'Boilerplate template designed to quickly bootstrap a React.js Web App, SPA, website or landing page with React 19, TypeScript, Shadcn/ui, TailwindCSS 4, Vite 7, SWC, ESLint 10, Husky and much more in just 30 seconds.',
+      'Dashboard-first YouTube channel intelligence platform that benchmarks niche leaders and recommends what to create next.',
     keywords:
-      'react.js, react.js-template, react.js-boilerplate, typescript, shadcn/ui, tailwindcss, vite, swc, eslint, prettier, husky, commitlint, lint-staged'
+      'youtube analytics, creator intelligence, niche benchmark, content gap analysis, title suggestions'
   },
   server: {
     host: 'localhost',

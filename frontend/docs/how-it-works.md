@@ -2,11 +2,11 @@
 
 ## User Journey
 
-1. User lands on YT Insight Engine landing page.
-2. User understands value, features, and use cases in under 10 seconds.
-3. User clicks CTA and submits a channel URL.
-4. User sees analysis progress state.
-5. User gets recommendation-first dashboard output.
+1. User lands on YT Insight Engine dashboard page.
+2. User submits a channel URL through the hero input.
+3. Frontend calls backend `POST /api/analyze-channel`.
+4. Frontend polls `GET /api/analysis/:jobId` until complete.
+5. Dashboard sections populate with recommendations and benchmark insights.
 
 ## Key UX Principles
 
@@ -20,9 +20,8 @@
 
 ## Content Blocks (Landing)
 
-- Hero: what NichePulse does.
-- Trust/value strip: why this is better than raw analytics.
-- Feature cards: niche detection, leader benchmarking, gap engine, title ideas.
-- Problem/solution: creator pain points and how product solves them.
-- Use cases: solo creator, small team, agency.
-- CTA: analyze now / sign up.
+- Hero: immediate value proposition with URL input.
+- Status strip: job state and detected niche.
+- Insight cards: top themes, growth themes, content gaps.
+- Benchmark section: niche leaders and strengths.
+- Recommendation section: suggested next videos.

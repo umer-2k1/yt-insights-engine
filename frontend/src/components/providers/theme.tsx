@@ -40,7 +40,7 @@ export default function ThemeProvider({
 
   const value = {
     theme: 'dark' as Theme,
-    setTheme: (theme: Theme) => {
+    setTheme: (_theme: Theme) => {
       localStorage.setItem(storageKey, defaultTheme);
       setTheme(defaultTheme);
     }

@@ -1,10 +1,48 @@
 import { BrowserRouter } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
 
 import RootProvider from './components/providers/root';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
 import { Input } from './components/ui/input';
+import env from './env';
+
+type ThemeGroup = {
+  name: string;
+  velocity: number;
+  videoTitles: string[];
+};
+
+type LeaderBenchmark = {
+  creator: string;
+  score: number;
+  strengths: string[];
+};
+
+type AnalysisPayload = {
+  channel: {
+    id: string;
+    title: string;
+    url: string;
+    niche: string;
+  };
+  topPerformingThemes: ThemeGroup[];
+  fastestGrowingThemes: ThemeGroup[];
+  contentGaps: string[];
+  suggestedVideos: string[];
+  leaderBenchmarks: LeaderBenchmark[];
+  generatedAt: string;
+};
+
+type AnalysisJob = {
+  jobId: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  error?: string;
+  result?: AnalysisPayload;
+};
+
+const apiBaseUrl = env.VITE_API_BASE_URL;
 
 const insightSections = [
   {
@@ -28,22 +66,67 @@ const featureHighlights = [
   'Actionable title suggestions for your next uploads'
 ];
 
-const dashboardCards = [
-  {
-    heading: 'Top Performing Themes',
-    points: ['AI Agents', 'Cursor Tutorials', 'MCP Servers']
-  },
-  {
-    heading: 'Fastest Growing',
-    points: ['Claude Code', 'OpenAI Agents SDK', 'Agent Tooling']
-  },
-  {
-    heading: 'Content Gaps',
-    points: ['AI Agent Monitoring', 'Memory Systems', 'Multi-Agent Workflows']
-  }
-];
-
 function App() {
+  const [channelUrl, setChannelUrl] = useState('');
+  const [job, setJob] = useState<AnalysisJob | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const statusLabel = useMemo(() => job?.status ?? 'idle', [job]);
+  const result = job?.result;
+
+  useEffect(() => {
+    if (!job?.jobId || (job.status !== 'queued' && job.status !== 'running')) {
+      return undefined;
+    }
+
+    const interval = globalThis.setInterval(async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/analysis/${job.jobId}`);
+        if (!response.ok) {
+          throw new Error('Failed to load analysis status');
+        }
+
+        const nextJob = (await response.json()) as AnalysisJob;
+        setJob(nextJob);
+      } catch (pollError) {
+        setError(pollError instanceof Error ? pollError.message : 'Polling failed');
+      }
+    }, 2000);
+
+    return () => {
+      globalThis.clearInterval(interval);
+    };
+  }, [job?.jobId, job?.status]);
+
+  async function handleAnalyze(): Promise<void> {
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/analyze-channel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channelUrl,
+          maxVideos: 15
+        })
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string };
+        throw new Error(payload.message ?? 'Unable to start analysis');
+      }
+
+      const createdJob = (await response.json()) as AnalysisJob;
+      setJob(createdJob);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Request failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <RootProvider>
       <BrowserRouter>
@@ -54,14 +137,14 @@ function App() {
                 <div className='bg-primary size-2 rounded-full' />
                 <p className='text-muted-foreground text-sm tracking-widest uppercase'>YT Insight Engine</p>
               </div>
-              <Button>Get Started</Button>
+              <Badge className='bg-secondary text-primary hover:bg-secondary'>Dashboard-first product</Badge>
             </div>
           </header>
 
           <main className='mx-auto flex w-full max-w-6xl flex-col gap-14 px-6 py-12'>
             <section className='space-y-6'>
               <Badge className='bg-secondary text-primary hover:bg-secondary'>
-                Dashboard-First YouTube Intelligence
+                Channel intelligence + niche benchmark recommendations
               </Badge>
               <h1 className='max-w-4xl text-4xl leading-tight font-semibold md:text-6xl'>
                 Analyze your channel, benchmark niche leaders, and know exactly what to create next.
@@ -74,11 +157,29 @@ function App() {
                 <Input
                   placeholder='Paste YouTube channel URL'
                   className='text-foreground placeholder:text-muted-foreground h-12'
+                  value={channelUrl}
+                  onChange={(event) => {
+                    setChannelUrl(event.target.value);
+                  }}
                 />
-                <Button size='lg' className='h-12'>
-                  Analyze Channel
+                <Button
+                  size='lg'
+                  className='h-12'
+                  onClick={() => {
+                    void handleAnalyze();
+                  }}
+                  disabled={isSubmitting || channelUrl.trim().length === 0}
+                >
+                  {isSubmitting ? 'Starting...' : 'Analyze Channel'}
                 </Button>
               </div>
+              <div className='flex flex-wrap items-center gap-3'>
+                <Badge className='bg-secondary text-primary hover:bg-secondary'>
+                  Status: {statusLabel.toUpperCase()}
+                </Badge>
+                {result?.channel.niche ? <Badge variant='outline'>Niche: {result.channel.niche}</Badge> : null}
+              </div>
+              {error ? <p className='text-sm text-red-400'>{error}</p> : null}
             </section>
 
             <section className='grid gap-4 md:grid-cols-3'>
@@ -93,23 +194,86 @@ function App() {
             </section>
 
             <section className='grid gap-5 lg:grid-cols-3'>
-              {dashboardCards.map((card) => (
-                <Card key={card.heading}>
-                  <CardHeader>
-                    <CardTitle>{card.heading}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className='text-muted-foreground space-y-2 text-sm'>
-                      {card.points.map((point) => (
-                        <li key={point} className='flex items-center gap-2'>
-                          <span className='bg-primary size-1.5 rounded-full' />
-                          {point}
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              ))}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Top Performing Themes</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className='text-muted-foreground space-y-2 text-sm'>
+                    {(result?.topPerformingThemes ?? []).map((theme) => (
+                      <li key={theme.name} className='flex items-center gap-2'>
+                        <span className='bg-primary size-1.5 rounded-full' />
+                        {theme.name} (v{theme.velocity})
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Fastest Growing</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className='text-muted-foreground space-y-2 text-sm'>
+                    {(result?.fastestGrowingThemes ?? []).map((theme) => (
+                      <li key={theme.name} className='flex items-center gap-2'>
+                        <span className='bg-primary size-1.5 rounded-full' />
+                        {theme.name} (v{theme.velocity})
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Content Gaps</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className='text-muted-foreground space-y-2 text-sm'>
+                    {(result?.contentGaps ?? []).map((gap) => (
+                      <li key={gap} className='flex items-center gap-2'>
+                        <span className='bg-primary size-1.5 rounded-full' />
+                        {gap}
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            </section>
+
+            <section className='grid gap-5 lg:grid-cols-2'>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Niche Leaders</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className='space-y-4 text-sm'>
+                    {(result?.leaderBenchmarks ?? []).map((leader) => (
+                      <li key={leader.creator} className='space-y-1 rounded-md border p-3'>
+                        <p className='font-medium'>
+                          {leader.creator} <span className='text-primary'>({leader.score})</span>
+                        </p>
+                        <p className='text-muted-foreground'>{leader.strengths.join(' • ')}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Suggested Videos</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ol className='text-muted-foreground list-inside list-decimal space-y-2 text-sm'>
+                    {(result?.suggestedVideos ?? []).map((title) => (
+                      <li key={title}>{title}</li>
+                    ))}
+                  </ol>
+                </CardContent>
+              </Card>
             </section>
 
             <section className='bg-card grid gap-6 rounded-xl border p-6 lg:grid-cols-2'>
@@ -129,6 +293,15 @@ function App() {
                 ))}
               </ul>
             </section>
+
+            {result ? (
+              <section className='bg-card rounded-xl border p-6'>
+                <h3 className='text-xl font-semibold'>Latest Analysis</h3>
+                <p className='text-muted-foreground mt-2 text-sm'>
+                  {result.channel.title} • {new Date(result.generatedAt).toLocaleString()}
+                </p>
+              </section>
+            ) : null}
           </main>
         </div>
       </BrowserRouter>

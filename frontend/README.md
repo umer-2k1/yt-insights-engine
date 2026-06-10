@@ -45,6 +45,7 @@ This frontend is built with Vite, React, TypeScript, Tailwind, and shadcn/ui, an
 
 ```bash
 pnpm install
+cp .env.example .env
 pnpm dev
 ```
 
@@ -90,3 +91,4 @@ See:
 
 - No automated test-writing is in current MVP scope.
 - Focus is shipping a usable recommendation engine quickly.
+- Frontend expects backend API at `VITE_API_BASE_URL` (default `http://localhost:4000`).

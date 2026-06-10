@@ -6,19 +6,20 @@
 - Dark-only design direction selected.
 - Brand direction selected: **YT Insight Engine**.
 - Frontend documentation baseline created.
+- Theme tokens centralized in `global.css` (no hardcoded colors in page UI).
+- Dashboard page implemented as primary product surface.
+- Channel URL submission wired to backend analysis API.
+- Job status polling and result rendering implemented.
+- Insight sections rendered from live analysis payload.
 
 ## In Progress
 
-- Landing page information architecture and messaging.
-- Design token mapping for `#171a1c` and `#02e976`.
+- Fine-tuning information density and card-level UX polish.
 
 ## Pending
 
-- Implement landing page UI.
-- Implement Analyze page.
-- Implement Job Status experience.
-- Implement recommendation-first dashboard sections.
-- Connect frontend to backend API.
+- Optional chart visualizations (velocity trend line and topic cluster chart).
+- Optional dedicated route split (landing route and dashboard route).
 
 ## Out of Scope (Current)
 

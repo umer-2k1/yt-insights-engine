@@ -10,22 +10,26 @@
   - Redis
   - LangGraph
 - API and pipeline scope finalized for MVP.
+- Backend project initialized with pnpm package setup.
+- Prisma schema added with channel/video/comment/transcript/analysis models.
+- Environment config + `.env.example` added.
+- Express API implemented:
+  - `POST /api/analyze-channel`
+  - `GET /api/analysis/:jobId`
+  - `GET /api/health`
+- Async job lifecycle implemented with in-memory status store.
+- End-to-end analysis pipeline implemented with recommendation output.
+- Prisma persistence wiring added (enabled when `DATABASE_URL` is set).
 
 ## In Progress
 
-- Backend folder-level implementation planning with Prisma-first data model.
-- Job and worker flow definition for async analysis.
+- Replacing mock ingestion with real YouTube API integration.
 
 ## Pending
 
-- Initialize backend project with pnpm.
-- Configure Prisma and database connection via environment URI.
-- Create Prisma schema and initial migration.
-- Build YouTube ingestion services.
-- Build transcript-aware analysis pipeline.
-- Implement niche leader discovery and comparison modules.
-- Implement analysis job endpoints.
-- Integrate cache and queue.
+- Run Prisma migration against provided cloud PostgreSQL URI.
+- Add Redis-backed queue and cache layer.
+- Replace benchmark heuristics with LLM-powered scoring modules.
 
 ## Out of Scope (Current)
 

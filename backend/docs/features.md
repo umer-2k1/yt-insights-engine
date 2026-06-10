@@ -3,13 +3,14 @@
 ## Core MVP Features
 
 - Channel analysis job API
-  - `POST /analyze-channel`
-  - `GET /analysis/:jobId`
-- Latest 15 video ingestion.
+  - `POST /api/analyze-channel`
+  - `GET /api/analysis/:jobId`
+  - `GET /api/health`
+- Latest 15 video ingestion (current mock snapshot service for E2E flow).
 - Comment sampling per video.
-- Transcript-aware analysis when captions are available.
+- Transcript-aware analysis support path.
 - Automatic niche detection.
-- Top creator discovery in the same niche.
+- Top creator benchmark suggestions in the same niche.
 - Comparative insight generation:
   - topics
   - formats
@@ -23,10 +24,10 @@
 
 - Prisma ORM for model management and migrations.
 - Cloud PostgreSQL via connection URI.
-- Redis cache for quota protection and repeated-request efficiency.
+- Persistent analysis writes when `DATABASE_URL` is configured.
 
 ## Operational Features
 
-- Async processing through queue workers.
-- Retry and error state handling.
+- Async background processing with in-memory job store.
+- Error-state handling for failed analysis jobs.
 - Structured analysis result payload for dashboard rendering.
