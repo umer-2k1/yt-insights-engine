@@ -9,6 +9,7 @@ import type {
   TitlePatternInsight,
   VideoSnapshot
 } from '../types/analysis.js';
+import { classifyCommentIntent } from './comment-intent.js';
 
 const knownNiches = [
   { keyword: 'agent', label: 'AI Agents' },
@@ -239,23 +240,6 @@ function buildPostingPattern(videos: VideoSnapshot[]): PostingPatternInsight {
     bestPublishingDays: bestPublishingDays.length ? bestPublishingDays : ['Unknown'],
     consistencyScore
   };
-}
-
-function classifyCommentIntent(comment: string): 'request' | 'question' | 'positive' | 'negative' | 'complaint' {
-  const lowered = comment.toLowerCase();
-  if (lowered.includes('please') || lowered.includes('can you') || lowered.includes('cover')) {
-    return 'request';
-  }
-  if (lowered.includes('?')) {
-    return 'question';
-  }
-  if (lowered.includes('stuck') || lowered.includes('issue') || lowered.includes('error')) {
-    return 'complaint';
-  }
-  if (lowered.includes('great') || lowered.includes('thank')) {
-    return 'positive';
-  }
-  return 'negative';
 }
 
 function buildEngagementInsight(videos: VideoSnapshot[]): EngagementInsight {

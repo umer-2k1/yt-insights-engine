@@ -23,16 +23,18 @@
 - Real YouTube Data API integration added with auto fallback mode.
 - Expanded analysis outputs: formats, title patterns, posting cadence, engagement signals.
 - Added TTL caching layer for snapshot and analysis reuse.
+- Redis-aware queue and cache path added with fallback to in-memory mode.
+- Optional OpenAI recommendation refinement layer added.
 
 ## In Progress
 
-- Redis-backed queue/cache replacement for current in-memory stores.
+- Runtime integration checks (Redis and OpenAI keys in real environment).
 
 ## Pending
 
 - Run Prisma migration against provided cloud PostgreSQL URI.
-- Add Redis-backed queue and cache layer.
-- Replace benchmark heuristics with LLM-powered scoring modules.
+- Verify Redis infrastructure in deployment.
+- Tune LLM prompt/output constraints for stable JSON responses.
 
 ## Out of Scope (Current)
 

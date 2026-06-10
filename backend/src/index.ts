@@ -7,8 +7,10 @@ import { z } from 'zod';
 import { env } from './config/env.js';
 import { getPrismaClient } from './lib/prisma.js';
 import { runAnalysis } from './services/analysis-engine.js';
+import { classifyCommentIntent } from './services/comment-intent.js';
 import { applyLlmRecommendationLayer } from './services/llm-scoring-service.js';
 import { fetchChannelSnapshot } from './services/youtube-service.js';
+import { enqueueAnalysisJob, startAnalysisWorker } from './store/analysis-queue.js';
 import {
   buildAnalysisKey,
   cacheAnalysis,
@@ -67,7 +69,12 @@ app.post('/api/analyze-channel', async (request, response) => {
     });
   }
 
-  void processAnalysis(jobId, normalizedChannelUrl, parsed.data.maxVideos, analysisKey);
+  await enqueueAnalysisJob({
+    jobId,
+    channelUrl: normalizedChannelUrl,
+    maxVideos: parsed.data.maxVideos,
+    analysisKey
+  });
 
   return response.status(202).json({
     jobId,
@@ -214,7 +221,8 @@ async function processAnalysis(
           await prisma.comment.create({
             data: {
               videoId: savedVideo.id,
-              text: comment
+              text: comment,
+              intentLabel: classifyCommentIntent(comment)
             }
           });
         }
@@ -241,6 +249,10 @@ async function processAnalysis(
     await updateJobStatus(jobId, 'failed', { error: message });
   }
 }
+
+startAnalysisWorker(async (payload) => {
+  await processAnalysis(payload.jobId, payload.channelUrl, payload.maxVideos, payload.analysisKey);
+});
 
 app.listen(env.PORT, () => {
   console.log(`YT Insight Engine backend running at http://localhost:${env.PORT}`);

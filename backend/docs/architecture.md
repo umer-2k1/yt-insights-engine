@@ -4,23 +4,23 @@
 
 - Node.js + TypeScript API service.
 - Prisma ORM with cloud PostgreSQL.
-- Redis for cache and async queue coordination.
-- LangGraph for orchestrated analysis steps.
+- Redis for cache and async queue coordination (optional; falls back to in-memory).
+- Heuristic analysis engine with optional LLM recommendation refinement.
 
 ## High-Level Flow
 
 1. Client submits channel URL.
 2. API validates request and creates analysis job.
-3. Worker fetches channel, videos, comments, and transcripts (if available).
-4. Worker detects niche and discovers top creators in that niche.
-5. Worker computes comparative insights and recommendations.
+3. Queue worker fetches channel, videos, comments, and transcript-context (if available).
+4. Analysis engine computes niche, themes, formats, title patterns, cadence, and engagement signals.
+5. Optional LLM layer refines content gaps and suggested video recommendations.
 6. Results persist in PostgreSQL and are returned through status endpoint.
 
 ## Data Strategy
 
 - PostgreSQL is source of truth.
 - Prisma schema defines domain models and relations.
-- Redis cache prevents repeated YouTube calls within TTL windows.
+- Redis/in-memory cache prevents repeated YouTube calls within TTL windows.
 
 ## Extensibility
 

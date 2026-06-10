@@ -10,6 +10,7 @@
 - Latest 15 video ingestion via YouTube Data API when `YOUTUBE_API_KEY` is configured.
 - Automatic fallback snapshot mode when API key is missing or external fetch fails.
 - Comment sampling per video.
+- Comment intent classification (`positive`, `negative`, `request`, `question`, `complaint`).
 - Transcript-aware analysis support path (context snippet derived from title/description/comments).
 - Automatic niche detection.
 - Top creator benchmark suggestions in the same niche.
@@ -36,7 +37,14 @@
 
 ## Operational Features
 
-- Async background processing with in-memory job store.
-- TTL cache for channel snapshots and analysis results (24h) to reduce repeat processing.
+- Async background processing queue:
+  - Redis-backed when `REDIS_URL` is configured
+  - In-memory fallback when Redis is unavailable
+- TTL cache for channel snapshots and analysis results (24h):
+  - Redis-backed when available
+  - In-memory fallback otherwise
 - Error-state handling for failed analysis jobs.
 - Structured analysis result payload for dashboard rendering.
+- Optional LLM recommendation layer:
+  - Uses `OPENAI_API_KEY` when present
+  - Falls back to deterministic heuristic outputs when absent
