@@ -9,7 +9,10 @@ const schema = z.object({
   REDIS_URL: z.string().optional(),
   DATABASE_URL: z.string().optional(),
   YOUTUBE_API_KEY: z.string().optional(),
-  OPENAI_API_KEY: z.string().optional()
+  LLM_API_KEY: z.string().optional(),
+  LLM_API_BASE_URL: z.string().default('https://api.groq.com/openai/v1'),
+  LLM_MODEL: z.string().default('llama-3.1-8b-instant'),
+  LLM_TEMPERATURE: z.coerce.number().default(0.2)
 });
 
 const parsed = schema.safeParse(process.env);

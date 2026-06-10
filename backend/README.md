@@ -8,7 +8,7 @@ Node.js + TypeScript backend for asynchronous channel analysis.
 - Prisma ORM
 - PostgreSQL (cloud URI via `DATABASE_URL`)
 - Redis queue/cache (optional via `REDIS_URL`)
-- OpenAI recommendation refinement (optional via `OPENAI_API_KEY`)
+- LangChain-based recommendation refinement (optional via generic LLM endpoint env vars)
 - pnpm
 
 ## Quick Start
@@ -27,7 +27,10 @@ pnpm dev
 - `REDIS_URL` - optional Redis connection URL
 - `DATABASE_URL` - cloud PostgreSQL URI
 - `YOUTUBE_API_KEY` - optional, enables real YouTube API ingestion
-- `OPENAI_API_KEY` - optional, enables LLM recommendation refinement
+- `LLM_API_KEY` - optional, enables LLM recommendation refinement
+- `LLM_API_BASE_URL` - LLM endpoint base URL (Groq-compatible default provided)
+- `LLM_MODEL` - model name for LLM refinement
+- `LLM_TEMPERATURE` - generation temperature for LLM refinement
 
 ## API
 

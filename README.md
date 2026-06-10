@@ -35,7 +35,7 @@ Dashboard-first YouTube creator intelligence app that answers:
 - Set `DATABASE_URL` for cloud PostgreSQL
 - Set `YOUTUBE_API_KEY` to enable real API ingestion
 - Set `REDIS_URL` to enable Redis-backed queue/cache (optional)
-- Set `OPENAI_API_KEY` to enable LLM recommendation refinement (optional)
+- Set `LLM_API_KEY` + `LLM_API_BASE_URL` + `LLM_MODEL` for LangChain LLM refinement (optional)
 
 ## Notes
 

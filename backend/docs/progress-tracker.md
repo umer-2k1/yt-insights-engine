@@ -8,7 +8,7 @@
   - Prisma ORM
   - Cloud PostgreSQL
   - Redis
-  - LangGraph
+  - Extensible analysis engine + optional LLM refinement
 - API and pipeline scope finalized for MVP.
 - Backend project initialized with pnpm package setup.
 - Prisma schema added with channel/video/comment/transcript/analysis models.
@@ -24,11 +24,11 @@
 - Expanded analysis outputs: formats, title patterns, posting cadence, engagement signals.
 - Added TTL caching layer for snapshot and analysis reuse.
 - Redis-aware queue and cache path added with fallback to in-memory mode.
-- Optional OpenAI recommendation refinement layer added.
+- Optional LangChain-based provider-agnostic recommendation refinement layer added (Groq-compatible endpoint).
 
 ## In Progress
 
-- Runtime integration checks (Redis and OpenAI keys in real environment).
+- Runtime integration checks (Redis and LLM endpoint keys in real environment).
 
 ## Pending
 

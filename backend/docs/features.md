@@ -46,5 +46,6 @@
 - Error-state handling for failed analysis jobs.
 - Structured analysis result payload for dashboard rendering.
 - Optional LLM recommendation layer:
-  - Uses `OPENAI_API_KEY` when present
+  - Uses LangChain pipeline with provider-agnostic endpoint configuration
+  - Uses `LLM_API_KEY` + `LLM_API_BASE_URL` + `LLM_MODEL` when present
   - Falls back to deterministic heuristic outputs when absent

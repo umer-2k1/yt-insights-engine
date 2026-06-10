@@ -1,3 +1,8 @@
+import { StructuredOutputParser } from '@langchain/core/output_parsers';
+import { ChatPromptTemplate } from '@langchain/core/prompts';
+import { RunnableLambda, RunnableSequence } from '@langchain/core/runnables';
+import { z } from 'zod';
+
 import { env } from '../config/env.js';
 import type { AnalysisResult, ChannelSnapshot } from '../types/analysis.js';
 
@@ -5,6 +10,11 @@ type LlmRecommendations = {
   contentGaps: string[];
   suggestedVideos: string[];
 };
+
+const recommendationSchema = z.object({
+  contentGaps: z.array(z.string()).min(1).max(3),
+  suggestedVideos: z.array(z.string()).min(1).max(5)
+});
 
 function buildPrompt(snapshot: ChannelSnapshot, draft: AnalysisResult): string {
   const compactVideos = snapshot.videos.slice(0, 12).map((video) => ({
@@ -32,33 +42,55 @@ function buildPrompt(snapshot: ChannelSnapshot, draft: AnalysisResult): string {
   );
 }
 
-async function fetchOpenAiRecommendations(
-  snapshot: ChannelSnapshot,
-  draft: AnalysisResult
-): Promise<LlmRecommendations | null> {
-  if (!env.OPENAI_API_KEY) {
+type ChatMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+};
+
+function toChatMessages(value: unknown): ChatMessage[] {
+  const promptValue = value as { toChatMessages?: () => Array<{ _getType?: () => string; content?: unknown }> };
+  const messages = promptValue.toChatMessages?.() ?? [];
+
+  const normalized: ChatMessage[] = messages.map((message) => {
+    const type = message._getType?.() ?? 'human';
+    const role: ChatMessage['role'] =
+      type === 'system' ? 'system' : type === 'ai' ? 'assistant' : 'user';
+
+    const rawContent = message.content;
+    const content =
+      typeof rawContent === 'string'
+        ? rawContent
+        : Array.isArray(rawContent)
+          ? JSON.stringify(rawContent)
+          : String(rawContent ?? '');
+
+    return {
+      role,
+      content
+    };
+  });
+
+  return normalized;
+}
+
+async function callGenericLlmEndpoint(messages: ChatMessage[]): Promise<string | null> {
+  if (!env.LLM_API_KEY) {
     return null;
   }
 
-  const response = await fetch('https://api.openai.com/v1/responses', {
+  const response = await fetch(`${env.LLM_API_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`
+      Authorization: `Bearer ${env.LLM_API_KEY}`
     },
     body: JSON.stringify({
-      model: 'gpt-4.1-mini',
-      input: [
-        {
-          role: 'system',
-          content:
-            'You are a YouTube content strategist. Return strict JSON with keys: contentGaps (3 strings), suggestedVideos (5 strings).'
-        },
-        {
-          role: 'user',
-          content: buildPrompt(snapshot, draft)
-        }
-      ]
+      model: env.LLM_MODEL,
+      temperature: env.LLM_TEMPERATURE,
+      messages: [
+        ...messages
+      ],
+      response_format: { type: 'json_object' }
     })
   });
 
@@ -66,40 +98,76 @@ async function fetchOpenAiRecommendations(
     return null;
   }
 
-  type OpenAiResponse = {
-    output_text?: string;
+  type GenericResponse = {
+    choices?: Array<{
+      message?: {
+        content?: string;
+      };
+    }>;
   };
-  const data = (await response.json()) as OpenAiResponse;
-  const text = data.output_text;
-  if (!text) {
+  const data = (await response.json()) as GenericResponse;
+  return data.choices?.[0]?.message?.content ?? null;
+}
+
+async function fetchLangChainRecommendations(
+  snapshot: ChannelSnapshot,
+  draft: AnalysisResult
+): Promise<LlmRecommendations | null> {
+  if (!env.LLM_API_KEY) {
     return null;
   }
 
-  try {
-    const parsed = JSON.parse(text) as LlmRecommendations;
-    if (
-      !Array.isArray(parsed.contentGaps) ||
-      !Array.isArray(parsed.suggestedVideos) ||
-      parsed.contentGaps.length < 1 ||
-      parsed.suggestedVideos.length < 1
-    ) {
-      return null;
-    }
+  const parser = StructuredOutputParser.fromZodSchema(recommendationSchema);
+  const promptTemplate = ChatPromptTemplate.fromMessages([
+    [
+      'system',
+      'You refine recommendations for a YouTube strategy dashboard. Keep responses concise and practical.'
+    ],
+    [
+      'human',
+      '{analysisInput}\n\nReturn JSON matching this format:\n{formatInstructions}'
+    ]
+  ]);
 
-    return {
-      contentGaps: parsed.contentGaps.slice(0, 3),
-      suggestedVideos: parsed.suggestedVideos.slice(0, 5)
-    };
-  } catch {
+  const chain = RunnableSequence.from([
+    promptTemplate,
+    RunnableLambda.from(async (value) => {
+      const messages = toChatMessages(value);
+      return callGenericLlmEndpoint(messages);
+    }),
+    RunnableLambda.from(async (text) => {
+      if (!text || typeof text !== 'string') {
+        return null;
+      }
+      try {
+        const parsed = await parser.parse(text);
+        return {
+          contentGaps: parsed.contentGaps.slice(0, 3),
+          suggestedVideos: parsed.suggestedVideos.slice(0, 5)
+        };
+      } catch {
+        return null;
+      }
+    })
+  ]);
+
+  const result = await chain.invoke({
+    analysisInput: buildPrompt(snapshot, draft),
+    formatInstructions: parser.getFormatInstructions()
+  });
+
+  if (!result) {
     return null;
   }
+
+  return result as LlmRecommendations;
 }
 
 export async function applyLlmRecommendationLayer(
   snapshot: ChannelSnapshot,
   draft: AnalysisResult
 ): Promise<AnalysisResult> {
-  const llm = await fetchOpenAiRecommendations(snapshot, draft);
+  const llm = await fetchLangChainRecommendations(snapshot, draft);
   if (!llm) {
     return draft;
   }

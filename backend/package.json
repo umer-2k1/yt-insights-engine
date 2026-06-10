@@ -13,6 +13,7 @@
     "prisma:push": "prisma db push"
   },
   "dependencies": {
+    "@langchain/core": "^0.3.66",
     "@prisma/client": "^6.9.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",

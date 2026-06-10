@@ -42,6 +42,7 @@ app.get('/api/health', (_request, response) => {
     prisma: prisma ? 'configured' : 'not_configured',
     youtube: env.YOUTUBE_API_KEY ? 'configured' : 'fallback_mode',
     redis: env.REDIS_URL ? 'configured' : 'in_memory_mode',
+    llm: env.LLM_API_KEY ? 'configured' : 'heuristic_mode',
     now: new Date().toISOString()
   });
 });

@@ -17,7 +17,7 @@
    - engagement signals
 8. Build niche-leader benchmarks, gaps, and suggested next videos.
 9. Persist channel, videos, metrics, comments, transcripts, and analysis result (when `DATABASE_URL` exists).
-10. Optionally refine gaps/suggestions via LLM layer when `OPENAI_API_KEY` is configured.
+10. Optionally refine gaps/suggestions via LangChain LLM layer when `LLM_API_KEY` is configured.
 11. Return normalized recommendation payload to frontend polling endpoint.
 
 Output payload includes:
