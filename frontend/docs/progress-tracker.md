@@ -11,10 +11,12 @@
 - Channel URL submission wired to backend analysis API.
 - Job status polling and result rendering implemented.
 - Insight sections rendered from live analysis payload.
+- Added dashboard modules for format, title-pattern, posting, and engagement insights.
 
 ## In Progress
 
 - Fine-tuning information density and card-level UX polish.
+- Optional chart modules for trend storytelling.
 
 ## Pending
 

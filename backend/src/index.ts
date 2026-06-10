@@ -8,6 +8,13 @@ import { env } from './config/env.js';
 import { getPrismaClient } from './lib/prisma.js';
 import { runAnalysis } from './services/analysis-engine.js';
 import { fetchChannelSnapshot } from './services/youtube-service.js';
+import {
+  buildAnalysisKey,
+  cacheAnalysis,
+  cacheChannelSnapshot,
+  getCachedAnalysis,
+  getCachedChannelSnapshot
+} from './store/cache-store.js';
 import { createJob, getJob, updateJobStatus } from './store/job-store.js';
 import { normalizeChannelUrl } from './utils/channel.js';
 
@@ -45,10 +52,20 @@ app.post('/api/analyze-channel', async (request, response) => {
   }
 
   const normalizedChannelUrl = normalizeChannelUrl(parsed.data.channelUrl);
+  const analysisKey = buildAnalysisKey(normalizedChannelUrl, parsed.data.maxVideos);
   const jobId = randomUUID();
   createJob(jobId, normalizedChannelUrl);
 
-  void processAnalysis(jobId, normalizedChannelUrl, parsed.data.maxVideos);
+  const cachedResult = getCachedAnalysis(analysisKey);
+  if (cachedResult) {
+    updateJobStatus(jobId, 'completed', { result: cachedResult });
+    return response.status(202).json({
+      jobId,
+      status: 'completed'
+    });
+  }
+
+  void processAnalysis(jobId, normalizedChannelUrl, parsed.data.maxVideos, analysisKey);
 
   return response.status(202).json({
     jobId,
@@ -71,11 +88,21 @@ app.get('/api/analysis/:jobId', async (request, response) => {
   return response.json(job);
 });
 
-async function processAnalysis(jobId: string, channelUrl: string, maxVideos: number): Promise<void> {
+async function processAnalysis(
+  jobId: string,
+  channelUrl: string,
+  maxVideos: number,
+  analysisKey: string
+): Promise<void> {
   try {
     updateJobStatus(jobId, 'running');
-    const snapshot = await fetchChannelSnapshot({ channelUrl, maxVideos });
+    const cachedSnapshot = getCachedChannelSnapshot(analysisKey);
+    const snapshot = cachedSnapshot ?? (await fetchChannelSnapshot({ channelUrl, maxVideos }));
+    if (!cachedSnapshot) {
+      cacheChannelSnapshot(analysisKey, snapshot);
+    }
     const result = await runAnalysis(snapshot);
+    cacheAnalysis(analysisKey, result);
 
     if (prisma) {
       const channel = await prisma.channel.upsert({

@@ -20,10 +20,13 @@
 - Async job lifecycle implemented with in-memory status store.
 - End-to-end analysis pipeline implemented with recommendation output.
 - Prisma persistence wiring added (enabled when `DATABASE_URL` is set).
+- Real YouTube Data API integration added with auto fallback mode.
+- Expanded analysis outputs: formats, title patterns, posting cadence, engagement signals.
+- Added TTL caching layer for snapshot and analysis reuse.
 
 ## In Progress
 
-- Replacing mock ingestion with real YouTube API integration.
+- Redis-backed queue/cache replacement for current in-memory stores.
 
 ## Pending
 

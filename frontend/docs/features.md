@@ -20,6 +20,10 @@
   - Content gaps
   - Niche leader comparison
   - Suggested video ideas
+  - Winning content formats
+  - Title pattern performance
+  - Posting pattern insight
+  - Engagement signals
 - API integration
   - `POST /api/analyze-channel`
   - Polling `GET /api/analysis/:jobId`

@@ -5,12 +5,19 @@
 1. Accept channel URL from frontend.
 2. Create job and return `jobId` immediately.
 3. Process analysis asynchronously (`queued -> running -> completed/failed`).
-4. Build latest 15 video snapshot with metadata, comments, and transcript snippets.
-5. Detect channel niche from title/description signals.
-6. Compute top performing themes and fastest growing themes by velocity.
-7. Build niche-leader benchmark and content gap recommendations.
-8. Persist results to PostgreSQL through Prisma when `DATABASE_URL` is configured.
-9. Return normalized recommendation payload to frontend polling endpoint.
+4. Fetch latest 15 videos from YouTube Data API (fallback to local snapshot mode if API is unavailable).
+5. Enrich each video with sampled comments and transcript-context snippet.
+6. Detect channel niche from title/description/transcript-context signals.
+7. Compute:
+   - top themes
+   - fastest-growing themes
+   - format performance
+   - title pattern performance
+   - posting cadence
+   - engagement signals
+8. Build niche-leader benchmarks, gaps, and suggested next videos.
+9. Persist channel, videos, metrics, comments, transcripts, and analysis result (when `DATABASE_URL` exists).
+10. Return normalized recommendation payload to frontend polling endpoint.
 
 Output payload includes:
     - what is working
@@ -22,5 +29,6 @@ Output payload includes:
 
 - Caption-first transcript support keeps MVP light and fast.
 - Current ingestion is mock-backed to keep local E2E flow fully runnable without external API keys.
+- Real YouTube API path is implemented and used when key is provided.
 - Full raw video/frame/audio processing stays outside MVP scope.
 - Comparison-first outputs create immediate decision value for creators.
