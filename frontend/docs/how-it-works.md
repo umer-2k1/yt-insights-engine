@@ -18,10 +18,13 @@
   - What is missing?
   - What to create next?
 
-## Content Blocks (Landing)
+## Content Blocks (Dashboard)
 
 - Hero: immediate value proposition with URL input.
 - Status strip: job state and detected niche.
 - Insight cards: top themes, growth themes, content gaps.
 - Benchmark section: niche leaders and strengths.
+- Pattern sections: winning formats and title pattern performance.
+- Cadence section: uploads-per-week and publishing-day guidance.
+- Engagement section: like/comment rates and audience request signals.
 - Recommendation section: suggested next videos.

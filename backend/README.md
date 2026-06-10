@@ -30,6 +30,7 @@ pnpm dev
 - `GET /api/health`
 - `POST /api/analyze-channel`
 - `GET /api/analysis/:jobId`
+- `GET /api/analysis-by-channel?channelUrl=...`
 
 ## Notes
 

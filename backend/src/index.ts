@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { env } from './config/env.js';
 import { getPrismaClient } from './lib/prisma.js';
 import { runAnalysis } from './services/analysis-engine.js';
+import { applyLlmRecommendationLayer } from './services/llm-scoring-service.js';
 import { fetchChannelSnapshot } from './services/youtube-service.js';
 import {
   buildAnalysisKey,
@@ -38,6 +39,7 @@ app.get('/api/health', (_request, response) => {
     status: 'ok',
     prisma: prisma ? 'configured' : 'not_configured',
     youtube: env.YOUTUBE_API_KEY ? 'configured' : 'fallback_mode',
+    redis: env.REDIS_URL ? 'configured' : 'in_memory_mode',
     now: new Date().toISOString()
   });
 });
@@ -54,11 +56,11 @@ app.post('/api/analyze-channel', async (request, response) => {
   const normalizedChannelUrl = normalizeChannelUrl(parsed.data.channelUrl);
   const analysisKey = buildAnalysisKey(normalizedChannelUrl, parsed.data.maxVideos);
   const jobId = randomUUID();
-  createJob(jobId, normalizedChannelUrl);
+  await createJob(jobId, normalizedChannelUrl);
 
-  const cachedResult = getCachedAnalysis(analysisKey);
+  const cachedResult = await getCachedAnalysis(analysisKey);
   if (cachedResult) {
-    updateJobStatus(jobId, 'completed', { result: cachedResult });
+    await updateJobStatus(jobId, 'completed', { result: cachedResult });
     return response.status(202).json({
       jobId,
       status: 'completed'
@@ -80,12 +82,53 @@ app.get('/api/analysis/:jobId', async (request, response) => {
     return response.status(400).json({ message: 'Invalid job id' });
   }
 
-  const job = getJob(params.data.jobId);
+  const job = await getJob(params.data.jobId);
   if (!job) {
     return response.status(404).json({ message: 'Analysis job not found' });
   }
 
   return response.json(job);
+});
+
+app.get('/api/analysis-by-channel', async (request, response) => {
+  const querySchema = z.object({
+    channelUrl: z.string().url()
+  });
+  const parsed = querySchema.safeParse(request.query);
+  if (!parsed.success) {
+    return response.status(400).json({ message: 'channelUrl query param is required and must be a valid URL' });
+  }
+
+  if (!prisma) {
+    return response.status(503).json({ message: 'DATABASE_URL is not configured' });
+  }
+
+  const channelUrl = normalizeChannelUrl(parsed.data.channelUrl);
+  const channel = await prisma.channel.findUnique({
+    where: { url: channelUrl },
+    include: {
+      analyses: {
+        orderBy: {
+          createdAt: 'desc'
+        },
+        take: 1
+      }
+    }
+  });
+
+  const latest = channel?.analyses?.[0];
+  if (!latest?.resultJson) {
+    return response.status(404).json({ message: 'No analysis found for channel' });
+  }
+
+  return response.json({
+    channelUrl,
+    analysisId: latest.id,
+    status: latest.status,
+    createdAt: latest.createdAt,
+    completedAt: latest.completedAt,
+    result: latest.resultJson
+  });
 });
 
 async function processAnalysis(
@@ -95,14 +138,15 @@ async function processAnalysis(
   analysisKey: string
 ): Promise<void> {
   try {
-    updateJobStatus(jobId, 'running');
-    const cachedSnapshot = getCachedChannelSnapshot(analysisKey);
+    await updateJobStatus(jobId, 'running');
+    const cachedSnapshot = await getCachedChannelSnapshot(analysisKey);
     const snapshot = cachedSnapshot ?? (await fetchChannelSnapshot({ channelUrl, maxVideos }));
     if (!cachedSnapshot) {
-      cacheChannelSnapshot(analysisKey, snapshot);
+      await cacheChannelSnapshot(analysisKey, snapshot);
     }
-    const result = await runAnalysis(snapshot);
-    cacheAnalysis(analysisKey, result);
+    const baseResult = await runAnalysis(snapshot);
+    const result = await applyLlmRecommendationLayer(snapshot, baseResult);
+    await cacheAnalysis(analysisKey, result);
 
     if (prisma) {
       const channel = await prisma.channel.upsert({
@@ -191,10 +235,10 @@ async function processAnalysis(
       });
     }
 
-    updateJobStatus(jobId, 'completed', { result });
+    await updateJobStatus(jobId, 'completed', { result });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown analysis failure';
-    updateJobStatus(jobId, 'failed', { error: message });
+    await updateJobStatus(jobId, 'failed', { error: message });
   }
 }
 

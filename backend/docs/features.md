@@ -5,6 +5,7 @@
 - Channel analysis job API
   - `POST /api/analyze-channel`
   - `GET /api/analysis/:jobId`
+  - `GET /api/analysis-by-channel?channelUrl=...`
   - `GET /api/health`
 - Latest 15 video ingestion via YouTube Data API when `YOUTUBE_API_KEY` is configured.
 - Automatic fallback snapshot mode when API key is missing or external fetch fails.
