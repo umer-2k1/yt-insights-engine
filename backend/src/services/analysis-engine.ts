@@ -1,8 +1,12 @@
 import type {
   AnalysisResult,
   ChannelSnapshot,
+  ContentFormatInsight,
+  EngagementInsight,
   LeaderBenchmark,
+  PostingPatternInsight,
   ThemeGroup,
+  TitlePatternInsight,
   VideoSnapshot
 } from '../types/analysis.js';
 
@@ -24,7 +28,7 @@ function getDaysSinceUpload(publishedAt: string): number {
 
 function getVelocity(video: VideoSnapshot, channelAvgViews: number): number {
   const days = getDaysSinceUpload(video.publishedAt);
-  return (video.views / Math.max(channelAvgViews, 1)) / days;
+  return video.views / Math.max(channelAvgViews, 1) / days;
 }
 
 function detectNiche(videos: VideoSnapshot[]): string {
@@ -112,11 +116,184 @@ function buildSuggestions(niche: string): string[] {
   ];
 }
 
+function detectFormat(title: string): string {
+  const lowered = title.toLowerCase();
+  if (lowered.includes('how ') || lowered.includes('tutorial')) {
+    return 'Tutorial';
+  }
+  if (lowered.includes('vs ')) {
+    return 'Comparison';
+  }
+  if (lowered.includes('i built') || lowered.includes('i replaced')) {
+    return 'Build Log';
+  }
+  if (lowered.includes('roadmap') || lowered.includes('plan')) {
+    return 'Strategy';
+  }
+  return 'Explainer';
+}
+
+function detectTitlePattern(title: string): string {
+  if (/^how\b/i.test(title)) {
+    return 'How-to';
+  }
+  if (/^i\b/i.test(title)) {
+    return 'Personal narrative';
+  }
+  if (/\bvs\b/i.test(title)) {
+    return 'Comparison';
+  }
+  if (/\bbuild\b/i.test(title)) {
+    return 'Build format';
+  }
+  return 'Direct statement';
+}
+
+function buildFormatInsights(videos: VideoSnapshot[], channelAvgViews: number): ContentFormatInsight[] {
+  const buckets = new Map<string, { velocity: number; titles: string[]; count: number }>();
+
+  for (const video of videos) {
+    const format = detectFormat(video.title);
+    const velocity = getVelocity(video, channelAvgViews);
+    const existing = buckets.get(format) ?? { velocity: 0, titles: [], count: 0 };
+    existing.velocity += velocity;
+    existing.titles.push(video.title);
+    existing.count += 1;
+    buckets.set(format, existing);
+  }
+
+  return [...buckets.entries()]
+    .map(([format, bucket]) => ({
+      format,
+      averageVelocity: Number((bucket.velocity / Math.max(bucket.count, 1)).toFixed(2)),
+      examples: bucket.titles.slice(0, 2)
+    }))
+    .sort((a, b) => b.averageVelocity - a.averageVelocity);
+}
+
+function buildTitlePatternInsights(videos: VideoSnapshot[], channelAvgViews: number): TitlePatternInsight[] {
+  const buckets = new Map<string, { velocity: number; titles: string[]; count: number }>();
+
+  for (const video of videos) {
+    const pattern = detectTitlePattern(video.title);
+    const velocity = getVelocity(video, channelAvgViews);
+    const existing = buckets.get(pattern) ?? { velocity: 0, titles: [], count: 0 };
+    existing.velocity += velocity;
+    existing.titles.push(video.title);
+    existing.count += 1;
+    buckets.set(pattern, existing);
+  }
+
+  return [...buckets.entries()]
+    .map(([pattern, bucket]) => ({
+      pattern,
+      averageVelocity: Number((bucket.velocity / Math.max(bucket.count, 1)).toFixed(2)),
+      examples: bucket.titles.slice(0, 2)
+    }))
+    .sort((a, b) => b.averageVelocity - a.averageVelocity);
+}
+
+function buildPostingPattern(videos: VideoSnapshot[]): PostingPatternInsight {
+  const sorted = [...videos].sort(
+    (a, b) => new Date(a.publishedAt).getTime() - new Date(b.publishedAt).getTime()
+  );
+
+  if (sorted.length < 2) {
+    return {
+      uploadsPerWeek: sorted.length,
+      bestPublishingDays: ['Unknown'],
+      consistencyScore: 0.4
+    };
+  }
+
+  const first = new Date(sorted[0]?.publishedAt ?? new Date().toISOString());
+  const last = new Date(sorted.at(-1)?.publishedAt ?? new Date().toISOString());
+  const totalDays = Math.max(1, Math.round((last.getTime() - first.getTime()) / (1000 * 60 * 60 * 24)));
+  const uploadsPerWeek = Number(((sorted.length / totalDays) * 7).toFixed(2));
+
+  const dayBuckets = new Map<string, number>();
+  for (const video of sorted) {
+    const day = new Date(video.publishedAt).toLocaleDateString('en-US', { weekday: 'long' });
+    dayBuckets.set(day, (dayBuckets.get(day) ?? 0) + 1);
+  }
+
+  const bestPublishingDays = [...dayBuckets.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([day]) => day);
+
+  const intervals: number[] = [];
+  for (let index = 1; index < sorted.length; index += 1) {
+    const previous = new Date(sorted[index - 1]?.publishedAt ?? new Date().toISOString()).getTime();
+    const current = new Date(sorted[index]?.publishedAt ?? new Date().toISOString()).getTime();
+    intervals.push(Math.max(1, Math.round((current - previous) / (1000 * 60 * 60 * 24))));
+  }
+
+  const averageInterval = intervals.reduce((acc, value) => acc + value, 0) / Math.max(intervals.length, 1);
+  const avgVariance =
+    intervals.reduce((acc, value) => acc + Math.abs(value - averageInterval), 0) / Math.max(intervals.length, 1);
+  const consistencyScore = Number(Math.max(0, Math.min(1, 1 - avgVariance / Math.max(averageInterval, 1))).toFixed(2));
+
+  return {
+    uploadsPerWeek,
+    bestPublishingDays: bestPublishingDays.length ? bestPublishingDays : ['Unknown'],
+    consistencyScore
+  };
+}
+
+function classifyCommentIntent(comment: string): 'request' | 'question' | 'positive' | 'negative' | 'complaint' {
+  const lowered = comment.toLowerCase();
+  if (lowered.includes('please') || lowered.includes('can you') || lowered.includes('cover')) {
+    return 'request';
+  }
+  if (lowered.includes('?')) {
+    return 'question';
+  }
+  if (lowered.includes('stuck') || lowered.includes('issue') || lowered.includes('error')) {
+    return 'complaint';
+  }
+  if (lowered.includes('great') || lowered.includes('thank')) {
+    return 'positive';
+  }
+  return 'negative';
+}
+
+function buildEngagementInsight(videos: VideoSnapshot[]): EngagementInsight {
+  const totals = videos.reduce(
+    (acc, video) => {
+      acc.views += video.views;
+      acc.likes += video.likes;
+      acc.comments += video.commentsCount;
+      return acc;
+    },
+    { views: 0, likes: 0, comments: 0 }
+  );
+
+  const comments = videos.flatMap((video) => video.sampleComments);
+  const intents = comments.map((comment) => classifyCommentIntent(comment));
+  const requestCount = intents.filter((intent) => intent === 'request').length;
+
+  const topAudienceRequests = comments
+    .filter((comment) => classifyCommentIntent(comment) === 'request')
+    .slice(0, 3);
+
+  return {
+    averageLikeRate: Number((totals.likes / Math.max(totals.views, 1)).toFixed(4)),
+    averageCommentRate: Number((totals.comments / Math.max(totals.views, 1)).toFixed(4)),
+    requestCommentShare: Number((requestCount / Math.max(comments.length, 1)).toFixed(4)),
+    topAudienceRequests
+  };
+}
+
 export async function runAnalysis(snapshot: ChannelSnapshot): Promise<AnalysisResult> {
   const totalViews = snapshot.videos.reduce((acc, video) => acc + video.views, 0);
   const channelAvgViews = totalViews / Math.max(snapshot.videos.length, 1);
   const niche = detectNiche(snapshot.videos);
   const topThemes = topThemeGroups(snapshot.videos, channelAvgViews);
+  const contentFormats = buildFormatInsights(snapshot.videos, channelAvgViews).slice(0, 4);
+  const titlePatterns = buildTitlePatternInsights(snapshot.videos, channelAvgViews).slice(0, 4);
+  const postingPattern = buildPostingPattern(snapshot.videos);
+  const engagement = buildEngagementInsight(snapshot.videos);
 
   const fastestGrowing = [...topThemes]
     .map((theme, index) => ({ ...theme, velocity: Number((theme.velocity + 0.25 * (2 - index)).toFixed(2)) }))
@@ -131,6 +308,10 @@ export async function runAnalysis(snapshot: ChannelSnapshot): Promise<AnalysisRe
     },
     topPerformingThemes: topThemes,
     fastestGrowingThemes: fastestGrowing,
+    contentFormats,
+    titlePatterns,
+    postingPattern,
+    engagement,
     contentGaps: buildGaps(niche),
     suggestedVideos: buildSuggestions(niche),
     leaderBenchmarks: buildLeaderBenchmarks(niche),

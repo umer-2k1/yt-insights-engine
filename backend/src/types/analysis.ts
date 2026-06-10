@@ -26,6 +26,31 @@ export type ThemeGroup = {
   videoTitles: string[];
 };
 
+export type ContentFormatInsight = {
+  format: string;
+  averageVelocity: number;
+  examples: string[];
+};
+
+export type TitlePatternInsight = {
+  pattern: string;
+  averageVelocity: number;
+  examples: string[];
+};
+
+export type PostingPatternInsight = {
+  uploadsPerWeek: number;
+  bestPublishingDays: string[];
+  consistencyScore: number;
+};
+
+export type EngagementInsight = {
+  averageLikeRate: number;
+  averageCommentRate: number;
+  requestCommentShare: number;
+  topAudienceRequests: string[];
+};
+
 export type LeaderBenchmark = {
   creator: string;
   score: number;
@@ -41,6 +66,10 @@ export type AnalysisResult = {
   };
   topPerformingThemes: ThemeGroup[];
   fastestGrowingThemes: ThemeGroup[];
+  contentFormats: ContentFormatInsight[];
+  titlePatterns: TitlePatternInsight[];
+  postingPattern: PostingPatternInsight;
+  engagement: EngagementInsight;
   contentGaps: string[];
   suggestedVideos: string[];
   leaderBenchmarks: LeaderBenchmark[];

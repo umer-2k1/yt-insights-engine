@@ -20,6 +20,31 @@ type LeaderBenchmark = {
   strengths: string[];
 };
 
+type ContentFormatInsight = {
+  format: string;
+  averageVelocity: number;
+  examples: string[];
+};
+
+type TitlePatternInsight = {
+  pattern: string;
+  averageVelocity: number;
+  examples: string[];
+};
+
+type PostingPatternInsight = {
+  uploadsPerWeek: number;
+  bestPublishingDays: string[];
+  consistencyScore: number;
+};
+
+type EngagementInsight = {
+  averageLikeRate: number;
+  averageCommentRate: number;
+  requestCommentShare: number;
+  topAudienceRequests: string[];
+};
+
 type AnalysisPayload = {
   channel: {
     id: string;
@@ -29,6 +54,10 @@ type AnalysisPayload = {
   };
   topPerformingThemes: ThemeGroup[];
   fastestGrowingThemes: ThemeGroup[];
+  contentFormats: ContentFormatInsight[];
+  titlePatterns: TitlePatternInsight[];
+  postingPattern: PostingPatternInsight;
+  engagement: EngagementInsight;
   contentGaps: string[];
   suggestedVideos: string[];
   leaderBenchmarks: LeaderBenchmark[];
@@ -272,6 +301,104 @@ function App() {
                       <li key={title}>{title}</li>
                     ))}
                   </ol>
+                </CardContent>
+              </Card>
+            </section>
+
+            <section className='grid gap-5 lg:grid-cols-2'>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Winning Formats</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className='space-y-4 text-sm'>
+                    {(result?.contentFormats ?? []).map((format) => (
+                      <li key={format.format} className='space-y-1 rounded-md border p-3'>
+                        <p className='font-medium'>
+                          {format.format} <span className='text-primary'>(v{format.averageVelocity})</span>
+                        </p>
+                        <p className='text-muted-foreground'>{format.examples.join(' • ')}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Title Patterns</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className='space-y-4 text-sm'>
+                    {(result?.titlePatterns ?? []).map((pattern) => (
+                      <li key={pattern.pattern} className='space-y-1 rounded-md border p-3'>
+                        <p className='font-medium'>
+                          {pattern.pattern} <span className='text-primary'>(v{pattern.averageVelocity})</span>
+                        </p>
+                        <p className='text-muted-foreground'>{pattern.examples.join(' • ')}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            </section>
+
+            <section className='grid gap-5 lg:grid-cols-2'>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Posting Pattern</CardTitle>
+                </CardHeader>
+                <CardContent className='space-y-2 text-sm'>
+                  <p>
+                    Uploads per week: <span className='text-primary'>{result?.postingPattern.uploadsPerWeek ?? '-'}</span>
+                  </p>
+                  <p>
+                    Best publishing days:{' '}
+                    <span className='text-muted-foreground'>
+                      {(result?.postingPattern.bestPublishingDays ?? []).join(', ') || '-'}
+                    </span>
+                  </p>
+                  <p>
+                    Consistency score:{' '}
+                    <span className='text-primary'>{result?.postingPattern.consistencyScore ?? '-'}</span>
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Engagement Signals</CardTitle>
+                </CardHeader>
+                <CardContent className='space-y-2 text-sm'>
+                  <p>
+                    Like rate:{' '}
+                    <span className='text-primary'>
+                      {result?.engagement.averageLikeRate != undefined
+                        ? `${(result.engagement.averageLikeRate * 100).toFixed(2)}%`
+                        : '-'}
+                    </span>
+                  </p>
+                  <p>
+                    Comment rate:{' '}
+                    <span className='text-primary'>
+                      {result?.engagement.averageCommentRate != undefined
+                        ? `${(result.engagement.averageCommentRate * 100).toFixed(2)}%`
+                        : '-'}
+                    </span>
+                  </p>
+                  <p>
+                    Request comment share:{' '}
+                    <span className='text-primary'>
+                      {result?.engagement.requestCommentShare != undefined
+                        ? `${(result.engagement.requestCommentShare * 100).toFixed(2)}%`
+                        : '-'}
+                    </span>
+                  </p>
+                  <ul className='text-muted-foreground mt-3 list-inside list-disc space-y-1'>
+                    {(result?.engagement.topAudienceRequests ?? []).map((requestText) => (
+                      <li key={requestText}>{requestText}</li>
+                    ))}
+                  </ul>
                 </CardContent>
               </Card>
             </section>
