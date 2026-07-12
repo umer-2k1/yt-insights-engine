@@ -32,6 +32,55 @@ services:
       timeout: 3s
       retries: 10
 
+  # --- Full-stack profile: `docker compose --profile app up --build` ---
+
+  migrate:
+    build:
+      context: ./backend
+      target: build
+    profiles: ['app']
+    command: pnpm prisma:deploy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/yt_insights?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build: ./backend
+    profiles: ['app']
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      FRONTEND_ORIGIN: http://localhost:8080
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/yt_insights?schema=public
+      # Optional: set in your shell (or a .env next to this file) for real
+      # ingestion and LLM recommendations; empty means demo mode + heuristics.
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+    ports:
+      - '4000:4000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:4000
+    profiles: ['app']
+    restart: unless-stopped
+    ports:
+      - '8080:80'
+    depends_on:
+      - backend
+
 volumes:
   postgres-data:
   redis-data:
