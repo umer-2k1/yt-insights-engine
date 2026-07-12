@@ -1,5 +1,5 @@
+import { getRedisClient, getStorageMode } from '../lib/redis.js';
 import type { AnalysisResult, ChannelSnapshot } from '../types/analysis.js';
-import { ensureRedisConnection, getRedisClient } from '../lib/redis.js';
 
 type CacheEntry<T> = {
   value: T;
@@ -10,11 +10,24 @@ const channelCache = new Map<string, CacheEntry<ChannelSnapshot>>();
 const analysisCache = new Map<string, CacheEntry<AnalysisResult>>();
 const CHANNEL_CACHE_PREFIX = 'cache:channel:';
 const ANALYSIS_CACHE_PREFIX = 'cache:analysis:';
+const CACHE_TTL_SECONDS = 24 * 60 * 60;
+const CACHE_TTL_MS = CACHE_TTL_SECONDS * 1000;
+// Bound the in-memory maps; entries for keys that are never requested again
+// would otherwise live for the process lifetime.
+const MAX_MEMORY_ENTRIES = 100;
 
-function setCache<T>(store: Map<string, CacheEntry<T>>, key: string, value: T, ttlMs: number): void {
+function setCache<T>(store: Map<string, CacheEntry<T>>, key: string, value: T): void {
+  store.delete(key);
+  while (store.size >= MAX_MEMORY_ENTRIES) {
+    const oldestKey = store.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    store.delete(oldestKey);
+  }
   store.set(key, {
     value,
-    expiresAt: Date.now() + ttlMs
+    expiresAt: Date.now() + CACHE_TTL_MS
   });
 }
 
@@ -34,68 +47,51 @@ export function buildAnalysisKey(channelUrl: string, maxVideos: number): string 
   return `${channelUrl}::${maxVideos}`;
 }
 
-function channelCacheKey(key: string): string {
-  return `${CHANNEL_CACHE_PREFIX}${key}`;
+async function getRedisValue<T>(key: string): Promise<T | null> {
+  const client = getStorageMode() === 'redis' ? getRedisClient() : null;
+  if (!client) {
+    return null;
+  }
+  const raw = await client.get(key);
+  if (!raw) {
+    return null;
+  }
+  return JSON.parse(raw) as T;
 }
 
-function analysisCacheKey(key: string): string {
-  return `${ANALYSIS_CACHE_PREFIX}${key}`;
+async function setRedisValue(key: string, value: unknown): Promise<boolean> {
+  const client = getStorageMode() === 'redis' ? getRedisClient() : null;
+  if (!client) {
+    return false;
+  }
+  await client.set(key, JSON.stringify(value), 'EX', CACHE_TTL_SECONDS);
+  return true;
 }
 
 export async function getCachedChannelSnapshot(key: string): Promise<ChannelSnapshot | null> {
-  const redisReady = await ensureRedisConnection();
-  if (redisReady) {
-    const client = getRedisClient();
-    if (client) {
-      const raw = await client.get(channelCacheKey(key));
-      if (!raw) {
-        return null;
-      }
-      return JSON.parse(raw) as ChannelSnapshot;
-    }
+  if (getStorageMode() === 'redis') {
+    return getRedisValue<ChannelSnapshot>(`${CHANNEL_CACHE_PREFIX}${key}`);
   }
-
   return getCache(channelCache, key);
 }
 
 export async function cacheChannelSnapshot(key: string, value: ChannelSnapshot): Promise<void> {
-  const redisReady = await ensureRedisConnection();
-  if (redisReady) {
-    const client = getRedisClient();
-    if (client) {
-      await client.set(channelCacheKey(key), JSON.stringify(value), 'EX', 24 * 60 * 60);
-      return;
-    }
+  if (await setRedisValue(`${CHANNEL_CACHE_PREFIX}${key}`, value)) {
+    return;
   }
-
-  setCache(channelCache, key, value, 24 * 60 * 60 * 1000);
+  setCache(channelCache, key, value);
 }
 
 export async function getCachedAnalysis(key: string): Promise<AnalysisResult | null> {
-  const redisReady = await ensureRedisConnection();
-  if (redisReady) {
-    const client = getRedisClient();
-    if (client) {
-      const raw = await client.get(analysisCacheKey(key));
-      if (!raw) {
-        return null;
-      }
-      return JSON.parse(raw) as AnalysisResult;
-    }
+  if (getStorageMode() === 'redis') {
+    return getRedisValue<AnalysisResult>(`${ANALYSIS_CACHE_PREFIX}${key}`);
   }
-
   return getCache(analysisCache, key);
 }
 
 export async function cacheAnalysis(key: string, value: AnalysisResult): Promise<void> {
-  const redisReady = await ensureRedisConnection();
-  if (redisReady) {
-    const client = getRedisClient();
-    if (client) {
-      await client.set(analysisCacheKey(key), JSON.stringify(value), 'EX', 24 * 60 * 60);
-      return;
-    }
+  if (await setRedisValue(`${ANALYSIS_CACHE_PREFIX}${key}`, value)) {
+    return;
   }
-
-  setCache(analysisCache, key, value, 24 * 60 * 60 * 1000);
+  setCache(analysisCache, key, value);
 }

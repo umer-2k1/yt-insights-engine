@@ -12,7 +12,8 @@ const schema = z.object({
   LLM_API_KEY: z.string().optional(),
   LLM_API_BASE_URL: z.string().default('https://api.groq.com/openai/v1'),
   LLM_MODEL: z.string().default('llama-3.1-8b-instant'),
-  LLM_TEMPERATURE: z.coerce.number().default(0.2)
+  LLM_TEMPERATURE: z.coerce.number().default(0.2),
+  JOB_TIMEOUT_MS: z.coerce.number().int().positive().default(180_000)
 });
 
 const parsed = schema.safeParse(process.env);

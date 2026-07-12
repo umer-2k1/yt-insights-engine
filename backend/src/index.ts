@@ -2,9 +2,11 @@ import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { logger } from './lib/logger.js';
 import { getPrismaClient } from './lib/prisma.js';
-import { getRedisClient } from './lib/redis.js';
+import { getRedisClient, initStorage } from './lib/redis.js';
 import { startAnalysisWorker, stopAnalysisWorker } from './store/analysis-queue.js';
 import { processAnalysis } from './worker.js';
+
+await initStorage();
 
 const app = createApp();
 

@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { env } from './config/env.js';
 import { getPrismaClient } from './lib/prisma.js';
+import { getStorageMode } from './lib/redis.js';
 import { enqueueAnalysisJob } from './store/analysis-queue.js';
 import { buildAnalysisKey, getCachedAnalysis } from './store/cache-store.js';
 import { createJob, getJob, updateJobStatus } from './store/job-store.js';
@@ -23,7 +24,8 @@ export function registerRoutes(app: Express): void {
       status: 'ok',
       prisma: prisma ? 'configured' : 'not_configured',
       youtube: env.YOUTUBE_API_KEY ? 'configured' : 'demo_mode',
-      redis: env.REDIS_URL ? 'configured' : 'in_memory_mode',
+      // Actual runtime mode decided at startup, not env-var presence.
+      storage: getStorageMode(),
       llm: env.LLM_API_KEY ? 'configured' : 'heuristic_mode',
       now: new Date().toISOString()
     });
