@@ -32,6 +32,12 @@ export async function initStorage(): Promise<StorageMode> {
     lazyConnect: true
   });
 
+  // Without a listener ioredis prints "Unhandled error event" for every
+  // connection error; surface them through the structured logger instead.
+  client.on('error', (error) => {
+    logger.warn({ error: error.message }, 'redis client error');
+  });
+
   const connectPromise = client.connect();
   // If the race below times out first, the losing rejection must not surface
   // as an unhandled rejection.

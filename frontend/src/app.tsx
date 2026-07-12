@@ -1,21 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { Alert, AlertDescription, AlertTitle } from './components/ui/alert';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
 import { Input } from './components/ui/input';
+import { Label } from './components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from './components/ui/select';
+import { Skeleton } from './components/ui/skeleton';
 import env from './env';
 
 type ThemeGroup = {
   name: string;
   velocity: number;
   videoTitles: string[];
-};
-
-type LeaderBenchmark = {
-  creator: string;
-  score: number;
-  strengths: string[];
 };
 
 type ContentFormatInsight = {
@@ -50,6 +54,7 @@ type AnalysisPayload = {
     url: string;
     niche: string;
   };
+  dataSource: 'youtube' | 'demo';
   topPerformingThemes: ThemeGroup[];
   fastestGrowingThemes: ThemeGroup[];
   contentFormats: ContentFormatInsight[];
@@ -58,7 +63,7 @@ type AnalysisPayload = {
   engagement: EngagementInsight;
   contentGaps: string[];
   suggestedVideos: string[];
-  leaderBenchmarks: LeaderBenchmark[];
+  recommendationSource: 'llm' | 'heuristic';
   generatedAt: string;
 };
 
@@ -70,31 +75,58 @@ type AnalysisJob = {
 };
 
 const apiBaseUrl = env.VITE_API_BASE_URL;
+const POLL_INTERVAL_MS = 2000;
+const MAX_POLL_FAILURES = 5;
+const maxVideosOptions = ['5', '15', '25', '50'];
 
 const insightSections = [
   {
     title: 'What is winning now',
-    description: 'Theme clusters ranked by velocity, engagement quality, and recency.'
+    description: 'Theme clusters ranked by view velocity across your recent uploads.'
   },
   {
     title: 'What is growing fast',
-    description: 'Emerging topics before they saturate in your niche.'
+    description: 'Themes accelerating in your most recent videos before they saturate.'
   },
   {
     title: 'What you are missing',
-    description: 'Gap detection against top creators in the same niche.'
+    description: 'Content gaps and video ideas grounded in your titles and audience comments.'
   }
 ];
 
 const featureHighlights = [
-  'Latest 15-video analysis with sampled comments',
-  'Transcript-aware topic discovery when captions exist',
-  'Niche leader comparison for content and posting patterns',
-  'Actionable title suggestions for your next uploads'
+  'Analyzes your 5-50 most recent videos with sampled comments',
+  'Honest provenance: every result is labeled real YouTube data or demo data',
+  'AI-generated content gaps and video ideas with a rule-based fallback',
+  'Posting cadence, title patterns, and engagement signal breakdowns'
 ];
+
+function SourceChip({ source }: Readonly<{ source: 'llm' | 'heuristic' }>) {
+  return (
+    <Badge variant='outline' className='text-xs font-normal'>
+      {source === 'llm' ? 'AI-generated' : 'Rule-based'}
+    </Badge>
+  );
+}
+
+function SkeletonCard({ lines }: Readonly<{ lines: number }>) {
+  return (
+    <Card>
+      <CardHeader>
+        <Skeleton className='h-5 w-2/5' />
+      </CardHeader>
+      <CardContent className='space-y-3'>
+        {Array.from({ length: lines }, (_, index) => (
+          <Skeleton key={index} className='h-4 w-full' />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
 
 function App() {
   const [channelUrl, setChannelUrl] = useState('');
+  const [maxVideos, setMaxVideos] = useState('15');
   const [job, setJob] = useState<AnalysisJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -103,12 +135,14 @@ function App() {
   const result = job?.result;
   const jobId = job?.jobId;
   const jobStatus = job?.status;
+  const isProcessing = isSubmitting || jobStatus === 'queued' || jobStatus === 'running';
 
   useEffect(() => {
     if (jobId == null || (jobStatus !== 'queued' && jobStatus !== 'running')) {
       return undefined;
     }
 
+    let consecutiveFailures = 0;
     const interval = globalThis.setInterval(async () => {
       try {
         const response = await fetch(`${apiBaseUrl}/api/analysis/${jobId}`);
@@ -117,11 +151,22 @@ function App() {
         }
 
         const nextJob = (await response.json()) as AnalysisJob;
+        consecutiveFailures = 0;
+        setError(null);
         setJob(nextJob);
       } catch (pollError) {
-        setError(pollError instanceof Error ? pollError.message : 'Polling failed');
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= MAX_POLL_FAILURES) {
+          globalThis.clearInterval(interval);
+          setError(
+            pollError instanceof Error
+              ? `${pollError.message} — stopped checking. Is the backend still running?`
+              : 'Polling failed repeatedly — stopped checking.'
+          );
+          setJob((current) => (current ? { ...current, status: 'failed' } : current));
+        }
       }
-    }, 2000);
+    }, POLL_INTERVAL_MS);
 
     return () => {
       globalThis.clearInterval(interval);
@@ -138,7 +183,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           channelUrl,
-          maxVideos: 15
+          maxVideos: Number(maxVideos)
         })
       });
 
@@ -147,6 +192,8 @@ function App() {
         throw new Error(payload.message ?? 'Unable to start analysis');
       }
 
+      // Cache hits return the completed job with the result inline; fresh
+      // submissions return a queued job that the polling effect follows.
       const createdJob = (await response.json()) as AnalysisJob;
       setJob(createdJob);
     } catch (submitError) {
@@ -155,6 +202,8 @@ function App() {
       setIsSubmitting(false);
     }
   }
+
+  const activeError = error ?? (jobStatus === 'failed' ? (job?.error ?? 'Analysis failed') : null);
 
   return (
     <div className='bg-background text-foreground min-h-dvh'>
@@ -167,7 +216,7 @@ function App() {
             </p>
           </div>
           <Badge className='bg-secondary text-primary hover:bg-secondary'>
-            Dashboard-first product
+            Creator intelligence dashboard
           </Badge>
         </div>
       </header>
@@ -175,241 +224,312 @@ function App() {
       <main className='mx-auto flex w-full max-w-6xl flex-col gap-14 px-6 py-12'>
         <section className='space-y-6'>
           <Badge className='bg-secondary text-primary hover:bg-secondary'>
-            Channel intelligence + niche benchmark recommendations
+            Channel intelligence + publish-ready recommendations
           </Badge>
           <h1 className='max-w-4xl text-4xl leading-tight font-semibold md:text-6xl'>
-            Analyze your channel, benchmark niche leaders, and know exactly what to create next.
+            Analyze your channel and know exactly what to create next.
           </h1>
           <p className='text-muted-foreground max-w-3xl text-lg'>
-            YT Insight Engine fetches your latest videos, maps what is working now, compares you
-            against high-performing creators, and turns that into recommendations you can publish
-            this week.
+            YT Insight Engine fetches your latest videos, maps what is working now, and turns
+            audience signals into recommendations you can publish this week.
           </p>
-          <div className='grid gap-4 md:grid-cols-[1fr_auto]'>
-            <Input
-              placeholder='Paste YouTube channel URL'
-              className='text-foreground placeholder:text-muted-foreground h-12'
-              value={channelUrl}
-              onChange={(event) => {
-                setChannelUrl(event.target.value);
-              }}
-            />
-            <Button
-              size='lg'
-              className='h-12'
-              onClick={() => {
-                void handleAnalyze();
-              }}
-              disabled={isSubmitting || channelUrl.trim().length === 0}
-            >
-              {isSubmitting ? 'Starting...' : 'Analyze Channel'}
-            </Button>
-          </div>
-          <div className='flex flex-wrap items-center gap-3'>
+
+          <form
+            className='grid gap-4 md:grid-cols-[1fr_auto_auto]'
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleAnalyze();
+            }}
+          >
+            <div className='space-y-2'>
+              <Label htmlFor='channel-url'>YouTube channel URL</Label>
+              <Input
+                id='channel-url'
+                type='url'
+                placeholder='https://www.youtube.com/@yourchannel'
+                className='text-foreground placeholder:text-muted-foreground h-12'
+                value={channelUrl}
+                onChange={(event) => {
+                  setChannelUrl(event.target.value);
+                }}
+              />
+            </div>
+            <div className='space-y-2'>
+              <Label htmlFor='max-videos'>Videos</Label>
+              <Select value={maxVideos} onValueChange={setMaxVideos}>
+                <SelectTrigger id='max-videos' className='h-12 min-w-24'>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {maxVideosOptions.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option} videos
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className='space-y-2'>
+              <Label className='invisible hidden md:block'>Run</Label>
+              <Button
+                type='submit'
+                size='lg'
+                className='h-12 w-full md:w-auto'
+                disabled={isProcessing || channelUrl.trim().length === 0}
+              >
+                {isProcessing ? 'Analyzing...' : 'Analyze Channel'}
+              </Button>
+            </div>
+          </form>
+
+          <div className='flex flex-wrap items-center gap-3' aria-live='polite'>
             <Badge className='bg-secondary text-primary hover:bg-secondary'>
               Status: {statusLabel.toUpperCase()}
             </Badge>
             {result ? <Badge variant='outline'>Niche: {result.channel.niche}</Badge> : null}
           </div>
-          {error == null ? null : <p className='text-sm text-red-400'>{error}</p>}
+
+          {result?.dataSource === 'demo' ? (
+            <Alert>
+              <AlertTitle>Demo data</AlertTitle>
+              <AlertDescription>
+                This analysis was generated from labeled sample data because the backend has no
+                YouTube API key configured. Set YOUTUBE_API_KEY to analyze real channels.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {activeError == null ? null : (
+            <Alert variant='destructive' role='alert'>
+              <AlertTitle>Analysis failed</AlertTitle>
+              <AlertDescription>{activeError}</AlertDescription>
+            </Alert>
+          )}
         </section>
 
-        <section className='grid gap-4 md:grid-cols-3'>
-          {insightSections.map((item) => (
-            <Card key={item.title}>
-              <CardHeader>
-                <CardTitle>{item.title}</CardTitle>
-                <CardDescription>{item.description}</CardDescription>
-              </CardHeader>
-            </Card>
-          ))}
-        </section>
+        {result == null && !isProcessing ? (
+          <>
+            <section className='grid gap-4 md:grid-cols-3'>
+              {insightSections.map((item) => (
+                <Card key={item.title}>
+                  <CardHeader>
+                    <CardTitle>{item.title}</CardTitle>
+                    <CardDescription>{item.description}</CardDescription>
+                  </CardHeader>
+                </Card>
+              ))}
+            </section>
+            <section className='bg-card rounded-xl border p-10 text-center'>
+              <h2 className='text-xl font-semibold'>Run your first analysis</h2>
+              <p className='text-muted-foreground mx-auto mt-2 max-w-xl text-sm'>
+                Paste a YouTube channel URL above and the dashboard fills with winning themes,
+                growth signals, content gaps, and suggested videos. Works out of the box in demo
+                mode — no API keys required.
+              </p>
+            </section>
+          </>
+        ) : null}
 
-        <section className='grid gap-5 lg:grid-cols-3'>
-          <Card>
-            <CardHeader>
-              <CardTitle>Top Performing Themes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className='text-muted-foreground space-y-2 text-sm'>
-                {(result?.topPerformingThemes ?? []).map((theme) => (
-                  <li key={theme.name} className='flex items-center gap-2'>
-                    <span className='bg-primary size-1.5 rounded-full' />
-                    {theme.name} (v{theme.velocity})
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
+        {isProcessing && result == null ? (
+          <section
+            className='grid gap-5 lg:grid-cols-3'
+            aria-busy='true'
+            aria-label='Loading analysis'
+          >
+            {Array.from({ length: 6 }, (_, index) => (
+              <SkeletonCard key={index} lines={index % 2 === 0 ? 4 : 3} />
+            ))}
+          </section>
+        ) : null}
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Fastest Growing</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className='text-muted-foreground space-y-2 text-sm'>
-                {(result?.fastestGrowingThemes ?? []).map((theme) => (
-                  <li key={theme.name} className='flex items-center gap-2'>
-                    <span className='bg-primary size-1.5 rounded-full' />
-                    {theme.name} (v{theme.velocity})
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
+        {result ? (
+          <>
+            <section className='grid gap-5 lg:grid-cols-3'>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Top Performing Themes</CardTitle>
+                  <CardDescription>Average view velocity vs channel baseline</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className='text-muted-foreground space-y-2 text-sm'>
+                    {result.topPerformingThemes.map((theme) => (
+                      <li key={theme.name} className='flex items-center gap-2'>
+                        <span className='bg-primary size-1.5 rounded-full' />
+                        {theme.name} (v{theme.velocity})
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Content Gaps</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className='text-muted-foreground space-y-2 text-sm'>
-                {(result?.contentGaps ?? []).map((gap) => (
-                  <li key={gap} className='flex items-center gap-2'>
-                    <span className='bg-primary size-1.5 rounded-full' />
-                    {gap}
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        </section>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Fastest Growing</CardTitle>
+                  <CardDescription>Recent uploads accelerating vs older ones</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className='text-muted-foreground space-y-2 text-sm'>
+                    {result.fastestGrowingThemes.map((theme) => (
+                      <li key={theme.name} className='flex items-center gap-2'>
+                        <span className='bg-primary size-1.5 rounded-full' />
+                        {theme.name} (v{theme.velocity})
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
 
-        <section className='grid gap-5 lg:grid-cols-2'>
-          <Card>
-            <CardHeader>
-              <CardTitle>Niche Leaders</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className='space-y-4 text-sm'>
-                {(result?.leaderBenchmarks ?? []).map((leader) => (
-                  <li key={leader.creator} className='space-y-1 rounded-md border p-3'>
-                    <p className='font-medium'>
-                      {leader.creator} <span className='text-primary'>({leader.score})</span>
+              <Card>
+                <CardHeader>
+                  <CardTitle className='flex items-center justify-between gap-2'>
+                    Content Gaps
+                    <SourceChip source={result.recommendationSource} />
+                  </CardTitle>
+                  <CardDescription>Topics your audience wants that you skip</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className='text-muted-foreground space-y-2 text-sm'>
+                    {result.contentGaps.map((gap) => (
+                      <li key={gap} className='flex items-center gap-2'>
+                        <span className='bg-primary size-1.5 rounded-full' />
+                        {gap}
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            </section>
+
+            <section className='grid gap-5 lg:grid-cols-2'>
+              <Card>
+                <CardHeader>
+                  <CardTitle className='flex items-center justify-between gap-2'>
+                    Suggested Videos
+                    <SourceChip source={result.recommendationSource} />
+                  </CardTitle>
+                  <CardDescription>Publish-ready ideas for your next uploads</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ol className='text-muted-foreground list-inside list-decimal space-y-2 text-sm'>
+                    {result.suggestedVideos.map((title) => (
+                      <li key={title}>{title}</li>
+                    ))}
+                  </ol>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Winning Formats</CardTitle>
+                  <CardDescription>Formats ranked by average velocity</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className='space-y-4 text-sm'>
+                    {result.contentFormats.map((format) => (
+                      <li key={format.format} className='space-y-1 rounded-md border p-3'>
+                        <p className='font-medium'>
+                          {format.format}{' '}
+                          <span className='text-primary'>(v{format.averageVelocity})</span>
+                        </p>
+                        <p className='text-muted-foreground'>{format.examples.join(' • ')}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            </section>
+
+            <section className='grid gap-5 lg:grid-cols-2'>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Title Patterns</CardTitle>
+                  <CardDescription>Which title structures outperform</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className='space-y-4 text-sm'>
+                    {result.titlePatterns.map((pattern) => (
+                      <li key={pattern.pattern} className='space-y-1 rounded-md border p-3'>
+                        <p className='font-medium'>
+                          {pattern.pattern}{' '}
+                          <span className='text-primary'>(v{pattern.averageVelocity})</span>
+                        </p>
+                        <p className='text-muted-foreground'>{pattern.examples.join(' • ')}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Posting Pattern</CardTitle>
+                  <CardDescription>Cadence and consistency signals</CardDescription>
+                </CardHeader>
+                <CardContent className='space-y-2 text-sm'>
+                  <p>
+                    Uploads per week:{' '}
+                    <span className='text-primary'>{result.postingPattern.uploadsPerWeek}</span>
+                  </p>
+                  <p>
+                    Best publishing days:{' '}
+                    <span className='text-muted-foreground'>
+                      {result.postingPattern.bestPublishingDays.join(', ') || '-'}
+                    </span>
+                  </p>
+                  <p>
+                    Consistency score:{' '}
+                    <span className='text-primary'>{result.postingPattern.consistencyScore}</span>
+                  </p>
+                </CardContent>
+              </Card>
+            </section>
+
+            <section className='grid gap-5 lg:grid-cols-1'>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Engagement Signals</CardTitle>
+                  <CardDescription>
+                    How your audience responds and what they ask for
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className='grid gap-6 text-sm md:grid-cols-2'>
+                  <div className='space-y-2'>
+                    <p>
+                      Like rate:{' '}
+                      <span className='text-primary'>
+                        {(result.engagement.averageLikeRate * 100).toFixed(2)}%
+                      </span>
                     </p>
-                    <p className='text-muted-foreground'>{leader.strengths.join(' • ')}</p>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Suggested Videos</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ol className='text-muted-foreground list-inside list-decimal space-y-2 text-sm'>
-                {(result?.suggestedVideos ?? []).map((title) => (
-                  <li key={title}>{title}</li>
-                ))}
-              </ol>
-            </CardContent>
-          </Card>
-        </section>
-
-        <section className='grid gap-5 lg:grid-cols-2'>
-          <Card>
-            <CardHeader>
-              <CardTitle>Winning Formats</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className='space-y-4 text-sm'>
-                {(result?.contentFormats ?? []).map((format) => (
-                  <li key={format.format} className='space-y-1 rounded-md border p-3'>
-                    <p className='font-medium'>
-                      {format.format}{' '}
-                      <span className='text-primary'>(v{format.averageVelocity})</span>
+                    <p>
+                      Comment rate:{' '}
+                      <span className='text-primary'>
+                        {(result.engagement.averageCommentRate * 100).toFixed(2)}%
+                      </span>
                     </p>
-                    <p className='text-muted-foreground'>{format.examples.join(' • ')}</p>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Title Patterns</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className='space-y-4 text-sm'>
-                {(result?.titlePatterns ?? []).map((pattern) => (
-                  <li key={pattern.pattern} className='space-y-1 rounded-md border p-3'>
-                    <p className='font-medium'>
-                      {pattern.pattern}{' '}
-                      <span className='text-primary'>(v{pattern.averageVelocity})</span>
+                    <p>
+                      Request comment share:{' '}
+                      <span className='text-primary'>
+                        {(result.engagement.requestCommentShare * 100).toFixed(2)}%
+                      </span>
                     </p>
-                    <p className='text-muted-foreground'>{pattern.examples.join(' • ')}</p>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        </section>
-
-        <section className='grid gap-5 lg:grid-cols-2'>
-          <Card>
-            <CardHeader>
-              <CardTitle>Posting Pattern</CardTitle>
-            </CardHeader>
-            <CardContent className='space-y-2 text-sm'>
-              <p>
-                Uploads per week:{' '}
-                <span className='text-primary'>{result?.postingPattern.uploadsPerWeek ?? '-'}</span>
-              </p>
-              <p>
-                Best publishing days:{' '}
-                <span className='text-muted-foreground'>
-                  {(result?.postingPattern.bestPublishingDays ?? []).join(', ') || '-'}
-                </span>
-              </p>
-              <p>
-                Consistency score:{' '}
-                <span className='text-primary'>
-                  {result?.postingPattern.consistencyScore ?? '-'}
-                </span>
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Engagement Signals</CardTitle>
-            </CardHeader>
-            <CardContent className='space-y-2 text-sm'>
-              <p>
-                Like rate:{' '}
-                <span className='text-primary'>
-                  {result?.engagement.averageLikeRate == undefined
-                    ? '-'
-                    : `${(result.engagement.averageLikeRate * 100).toFixed(2)}%`}
-                </span>
-              </p>
-              <p>
-                Comment rate:{' '}
-                <span className='text-primary'>
-                  {result?.engagement.averageCommentRate == undefined
-                    ? '-'
-                    : `${(result.engagement.averageCommentRate * 100).toFixed(2)}%`}
-                </span>
-              </p>
-              <p>
-                Request comment share:{' '}
-                <span className='text-primary'>
-                  {result?.engagement.requestCommentShare == undefined
-                    ? '-'
-                    : `${(result.engagement.requestCommentShare * 100).toFixed(2)}%`}
-                </span>
-              </p>
-              <ul className='text-muted-foreground mt-3 list-inside list-disc space-y-1'>
-                {(result?.engagement.topAudienceRequests ?? []).map((requestText) => (
-                  <li key={requestText}>{requestText}</li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        </section>
+                  </div>
+                  <div>
+                    <p className='text-muted-foreground mb-2 font-medium'>Top audience requests</p>
+                    <ul className='text-muted-foreground list-inside list-disc space-y-1'>
+                      {result.engagement.topAudienceRequests.length > 0 ? (
+                        result.engagement.topAudienceRequests.map((requestText) => (
+                          <li key={requestText}>{requestText}</li>
+                        ))
+                      ) : (
+                        <li>No explicit requests detected in sampled comments</li>
+                      )}
+                    </ul>
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
+          </>
+        ) : null}
 
         <section className='bg-card grid gap-6 rounded-xl border p-6 lg:grid-cols-2'>
           <div className='space-y-3'>
