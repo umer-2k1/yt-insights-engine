@@ -9,6 +9,7 @@ import {
   cacheChannelSnapshot,
   getCachedChannelSnapshot
 } from './store/cache-store.js';
+import { releaseInflight } from './store/inflight-store.js';
 import { updateJobStatus } from './store/job-store.js';
 
 export type AnalysisJobPayload = {
@@ -43,5 +44,7 @@ export async function processAnalysis(payload: AnalysisJobPayload): Promise<void
     const message = error instanceof Error ? error.message : 'Unknown analysis failure';
     logger.error({ jobId, channelUrl, error: message }, 'analysis failed');
     await updateJobStatus(jobId, 'failed', { error: message });
+  } finally {
+    await releaseInflight(analysisKey);
   }
 }

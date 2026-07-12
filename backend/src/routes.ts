@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Express } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 
 import { env } from './config/env.js';
@@ -8,12 +9,28 @@ import { getPrismaClient } from './lib/prisma.js';
 import { getStorageMode } from './lib/redis.js';
 import { enqueueAnalysisJob } from './store/analysis-queue.js';
 import { buildAnalysisKey, getCachedAnalysis } from './store/cache-store.js';
+import { claimInflight } from './store/inflight-store.js';
 import { createJob, getJob, updateJobStatus } from './store/job-store.js';
-import { normalizeChannelUrl } from './utils/channel.js';
+import { isYouTubeUrl, normalizeChannelUrl } from './utils/channel.js';
+
+const youtubeUrlSchema = z
+  .string()
+  .url('Please provide a valid channel URL')
+  .refine(isYouTubeUrl, 'URL must point to youtube.com or youtu.be');
 
 const analyzeInputSchema = z.object({
-  channelUrl: z.string().url('Please provide a valid channel URL'),
+  channelUrl: youtubeUrlSchema,
   maxVideos: z.number().int().min(5).max(50).default(15)
+});
+
+// The analyze endpoint triggers outbound YouTube quota and paid LLM calls;
+// keep it on a much tighter budget than the read endpoints.
+const analyzeRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many analysis requests — try again in a few minutes.' }
 });
 
 export function registerRoutes(app: Express): void {
@@ -31,7 +48,7 @@ export function registerRoutes(app: Express): void {
     });
   });
 
-  app.post('/api/analyze-channel', async (request, response) => {
+  app.post('/api/analyze-channel', analyzeRateLimiter, async (request, response) => {
     const parsed = analyzeInputSchema.safeParse(request.body);
     if (!parsed.success) {
       return response.status(400).json({
@@ -42,18 +59,33 @@ export function registerRoutes(app: Express): void {
 
     const normalizedChannelUrl = normalizeChannelUrl(parsed.data.channelUrl);
     const analysisKey = buildAnalysisKey(normalizedChannelUrl, parsed.data.maxVideos);
-    const jobId = randomUUID();
-    await createJob(jobId, normalizedChannelUrl);
 
+    // Cache hit: return the result inline so the client renders immediately
+    // instead of polling a job that will never transition again.
     const cachedResult = await getCachedAnalysis(analysisKey);
     if (cachedResult) {
+      const jobId = randomUUID();
+      await createJob(jobId, normalizedChannelUrl);
       await updateJobStatus(jobId, 'completed', { result: cachedResult });
-      return response.status(202).json({
+      return response.status(200).json({
         jobId,
-        status: 'completed'
+        status: 'completed',
+        result: cachedResult
       });
     }
 
+    const jobId = randomUUID();
+    const inflightJobId = await claimInflight(analysisKey, jobId);
+    if (inflightJobId) {
+      // An identical analysis is already running; share its job.
+      return response.status(202).json({
+        jobId: inflightJobId,
+        status: 'queued',
+        deduplicated: true
+      });
+    }
+
+    await createJob(jobId, normalizedChannelUrl);
     await enqueueAnalysisJob({
       jobId,
       channelUrl: normalizedChannelUrl,
@@ -84,7 +116,7 @@ export function registerRoutes(app: Express): void {
 
   app.get('/api/analysis-by-channel', async (request, response) => {
     const querySchema = z.object({
-      channelUrl: z.string().url()
+      channelUrl: youtubeUrlSchema
     });
     const parsed = querySchema.safeParse(request.query);
     if (!parsed.success) {
