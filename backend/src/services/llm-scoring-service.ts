@@ -1,22 +1,21 @@
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { StructuredOutputParser } from '@langchain/core/output_parsers';
-import { ChatPromptTemplate } from '@langchain/core/prompts';
-import { RunnableLambda, RunnableSequence } from '@langchain/core/runnables';
 import { z } from 'zod';
 
 import { env } from '../config/env.js';
+import { logger } from '../lib/logger.js';
 import type { AnalysisResult, ChannelSnapshot } from '../types/analysis.js';
-
-type LlmRecommendations = {
-  contentGaps: string[];
-  suggestedVideos: string[];
-};
 
 const recommendationSchema = z.object({
   contentGaps: z.array(z.string()).min(1).max(3),
   suggestedVideos: z.array(z.string()).min(1).max(5)
 });
 
-function buildPrompt(snapshot: ChannelSnapshot, draft: AnalysisResult): string {
+type LlmRecommendations = z.infer<typeof recommendationSchema>;
+
+const parser = StructuredOutputParser.fromZodSchema(recommendationSchema);
+
+function buildAnalysisInput(snapshot: ChannelSnapshot, draft: AnalysisResult): string {
   const compactVideos = snapshot.videos.slice(0, 12).map((video) => ({
     title: video.title,
     views: video.views,
@@ -25,10 +24,11 @@ function buildPrompt(snapshot: ChannelSnapshot, draft: AnalysisResult): string {
 
   return JSON.stringify(
     {
-      task: 'Refine recommendations for a YouTube creator dashboard.',
+      task: 'Generate recommendations for a YouTube creator dashboard.',
       rules: [
         'Return JSON only.',
         'Provide exactly 3 contentGaps and 5 suggestedVideos.',
+        'Ground every recommendation in the provided titles, themes, and audience comments.',
         'Use concrete creator-friendly wording.'
       ],
       channel: draft.channel,
@@ -42,132 +42,84 @@ function buildPrompt(snapshot: ChannelSnapshot, draft: AnalysisResult): string {
   );
 }
 
-type ChatMessage = {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-};
-
-function toChatMessages(value: unknown): ChatMessage[] {
-  const promptValue = value as { toChatMessages?: () => Array<{ _getType?: () => string; content?: unknown }> };
-  const messages = promptValue.toChatMessages?.() ?? [];
-
-  const normalized: ChatMessage[] = messages.map((message) => {
-    const type = message._getType?.() ?? 'human';
-    const role: ChatMessage['role'] =
-      type === 'system' ? 'system' : type === 'ai' ? 'assistant' : 'user';
-
-    const rawContent = message.content;
-    const content =
-      typeof rawContent === 'string'
-        ? rawContent
-        : Array.isArray(rawContent)
-          ? JSON.stringify(rawContent)
-          : String(rawContent ?? '');
-
-    return {
-      role,
-      content
-    };
-  });
-
-  return normalized;
-}
-
-async function callGenericLlmEndpoint(messages: ChatMessage[]): Promise<string | null> {
-  if (!env.LLM_API_KEY) {
-    return null;
-  }
-
+async function callChatCompletions(messages: Array<SystemMessage | HumanMessage>): Promise<string | null> {
   const response = await fetch(`${env.LLM_API_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${env.LLM_API_KEY}`
+      Authorization: `Bearer ${env.LLM_API_KEY ?? ''}`
     },
     body: JSON.stringify({
       model: env.LLM_MODEL,
       temperature: env.LLM_TEMPERATURE,
-      messages: [
-        ...messages
-      ],
+      messages: messages.map((message) => ({
+        role: message instanceof SystemMessage ? 'system' : 'user',
+        content: typeof message.content === 'string' ? message.content : JSON.stringify(message.content)
+      })),
       response_format: { type: 'json_object' }
     })
   });
 
   if (!response.ok) {
+    const payload = await response.text();
+    logger.warn({ status: response.status, payload: payload.slice(0, 300) }, 'llm request failed');
     return null;
   }
 
-  type GenericResponse = {
-    choices?: Array<{
-      message?: {
-        content?: string;
-      };
-    }>;
+  type ChatResponse = {
+    choices?: Array<{ message?: { content?: string } }>;
   };
-  const data = (await response.json()) as GenericResponse;
+  const data = (await response.json()) as ChatResponse;
   return data.choices?.[0]?.message?.content ?? null;
 }
 
-async function fetchLangChainRecommendations(
+async function fetchLlmRecommendations(
   snapshot: ChannelSnapshot,
   draft: AnalysisResult
 ): Promise<LlmRecommendations | null> {
-  if (!env.LLM_API_KEY) {
+  const messages = [
+    new SystemMessage(
+      'You generate recommendations for a YouTube strategy dashboard. Keep responses concise and practical.'
+    ),
+    new HumanMessage(
+      `${buildAnalysisInput(snapshot, draft)}\n\nReturn JSON matching this format:\n${parser.getFormatInstructions()}`
+    )
+  ];
+
+  const text = await callChatCompletions(messages);
+  if (!text) {
     return null;
   }
 
-  const parser = StructuredOutputParser.fromZodSchema(recommendationSchema);
-  const promptTemplate = ChatPromptTemplate.fromMessages([
-    [
-      'system',
-      'You refine recommendations for a YouTube strategy dashboard. Keep responses concise and practical.'
-    ],
-    [
-      'human',
-      '{analysisInput}\n\nReturn JSON matching this format:\n{formatInstructions}'
-    ]
-  ]);
-
-  const chain = RunnableSequence.from([
-    promptTemplate,
-    RunnableLambda.from(async (value) => {
-      const messages = toChatMessages(value);
-      return callGenericLlmEndpoint(messages);
-    }),
-    RunnableLambda.from(async (text) => {
-      if (!text || typeof text !== 'string') {
-        return null;
-      }
-      try {
-        const parsed = await parser.parse(text);
-        return {
-          contentGaps: parsed.contentGaps.slice(0, 3),
-          suggestedVideos: parsed.suggestedVideos.slice(0, 5)
-        };
-      } catch {
-        return null;
-      }
-    })
-  ]);
-
-  const result = await chain.invoke({
-    analysisInput: buildPrompt(snapshot, draft),
-    formatInstructions: parser.getFormatInstructions()
-  });
-
-  if (!result) {
+  try {
+    const parsed = await parser.parse(text);
+    return {
+      contentGaps: parsed.contentGaps.slice(0, 3),
+      suggestedVideos: parsed.suggestedVideos.slice(0, 5)
+    };
+  } catch (error) {
+    logger.warn(
+      { error: error instanceof Error ? error.message : error },
+      'llm output failed schema validation; using heuristic recommendations'
+    );
     return null;
   }
-
-  return result as LlmRecommendations;
 }
 
+/**
+ * The LLM is the primary source for contentGaps/suggestedVideos when configured.
+ * On any failure the heuristic draft passes through unchanged, labeled
+ * recommendationSource: 'heuristic' so the client can tell them apart.
+ */
 export async function applyLlmRecommendationLayer(
   snapshot: ChannelSnapshot,
   draft: AnalysisResult
 ): Promise<AnalysisResult> {
-  const llm = await fetchLangChainRecommendations(snapshot, draft);
+  if (!env.LLM_API_KEY) {
+    return draft;
+  }
+
+  const llm = await fetchLlmRecommendations(snapshot, draft);
   if (!llm) {
     return draft;
   }
@@ -175,6 +127,7 @@ export async function applyLlmRecommendationLayer(
   return {
     ...draft,
     contentGaps: llm.contentGaps,
-    suggestedVideos: llm.suggestedVideos
+    suggestedVideos: llm.suggestedVideos,
+    recommendationSource: 'llm'
   };
 }

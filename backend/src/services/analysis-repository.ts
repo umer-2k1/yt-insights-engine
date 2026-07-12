@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 
 import type { AnalysisResult, ChannelSnapshot } from '../types/analysis.js';
+import { computeVelocity } from './analysis-engine.js';
 import { classifyCommentIntent } from './comment-intent.js';
 
 type PersistArgs = {
@@ -10,14 +11,6 @@ type PersistArgs = {
   channelUrl: string;
   maxVideos: number;
 };
-
-function computeStoredVelocity(views: number, publishedAt: string): number {
-  const daysSinceUpload = Math.max(
-    1,
-    Math.floor((Date.now() - new Date(publishedAt).getTime()) / (1000 * 60 * 60 * 24))
-  );
-  return views / daysSinceUpload;
-}
 
 /**
  * Persist a completed analysis atomically. The previous video set is replaced by
@@ -68,7 +61,7 @@ export async function persistAnalysis({
               viewCount: video.views,
               likeCount: video.likes,
               commentCount: video.commentsCount,
-              velocityScore: computeStoredVelocity(video.views, video.publishedAt)
+              velocityScore: computeVelocity(video)
             }
           },
           transcript: video.transcriptSnippet

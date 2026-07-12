@@ -1,4 +1,4 @@
-export type CommentIntent = 'positive' | 'negative' | 'request' | 'question' | 'complaint';
+export type CommentIntent = 'positive' | 'negative' | 'neutral' | 'request' | 'question' | 'complaint';
 
 /** Provenance of ingested channel data: real YouTube API or labeled demo data. */
 export type DataSource = 'youtube' | 'demo';
@@ -62,11 +62,8 @@ export type EngagementInsight = {
   topAudienceRequests: string[];
 };
 
-export type LeaderBenchmark = {
-  creator: string;
-  score: number;
-  strengths: string[];
-};
+/** How contentGaps/suggestedVideos were produced. */
+export type RecommendationSource = 'llm' | 'heuristic';
 
 export type AnalysisResult = {
   channel: {
@@ -84,7 +81,7 @@ export type AnalysisResult = {
   engagement: EngagementInsight;
   contentGaps: string[];
   suggestedVideos: string[];
-  leaderBenchmarks: LeaderBenchmark[];
+  recommendationSource: RecommendationSource;
   generatedAt: string;
 };
 

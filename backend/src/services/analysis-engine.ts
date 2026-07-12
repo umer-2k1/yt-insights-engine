@@ -3,7 +3,6 @@ import type {
   ChannelSnapshot,
   ContentFormatInsight,
   EngagementInsight,
-  LeaderBenchmark,
   PostingPatternInsight,
   ThemeGroup,
   TitlePatternInsight,
@@ -20,16 +19,21 @@ const knownNiches = [
   { keyword: 'claude', label: 'Claude Developer Ecosystem' }
 ];
 
-function getDaysSinceUpload(publishedAt: string): number {
+export function getDaysSinceUpload(publishedAt: string): number {
   const published = new Date(publishedAt).getTime();
   const now = Date.now();
   const diffDays = Math.floor((now - published) / (1000 * 60 * 60 * 24));
   return Math.max(1, diffDays);
 }
 
-function getVelocity(video: VideoSnapshot, channelAvgViews: number): number {
-  const days = getDaysSinceUpload(video.publishedAt);
-  return video.views / Math.max(channelAvgViews, 1) / days;
+/** Absolute views-per-day since upload — the single velocity definition used everywhere. */
+export function computeVelocity(video: Pick<VideoSnapshot, 'views' | 'publishedAt'>): number {
+  return video.views / getDaysSinceUpload(video.publishedAt);
+}
+
+/** Velocity normalized by channel average views, comparable across channels. */
+function getRelativeVelocity(video: VideoSnapshot, channelAvgViews: number): number {
+  return computeVelocity(video) / Math.max(channelAvgViews, 1);
 }
 
 function detectNiche(videos: VideoSnapshot[]): string {
@@ -44,7 +48,7 @@ function topThemeGroups(videos: VideoSnapshot[], channelAvgViews: number): Theme
   for (const video of videos) {
     const title = video.title.toLowerCase();
     const bucketKey = knownNiches.find((niche) => title.includes(niche.keyword))?.label ?? 'General Strategy';
-    const velocity = getVelocity(video, channelAvgViews);
+    const velocity = getRelativeVelocity(video, channelAvgViews);
     const existing = buckets.get(bucketKey) ?? { velocity: 0, titles: [], count: 0 };
     existing.velocity += velocity;
     existing.titles.push(video.title);
@@ -62,27 +66,70 @@ function topThemeGroups(videos: VideoSnapshot[], channelAvgViews: number): Theme
     .slice(0, 3);
 }
 
-function buildLeaderBenchmarks(niche: string): LeaderBenchmark[] {
-  const defaults: Record<string, LeaderBenchmark[]> = {
-    'AI Agents': [
-      { creator: 'Agents Daily', score: 92, strengths: ['Multi-agent demos', 'Fast publishing cadence'] },
-      { creator: 'Build With Agents', score: 89, strengths: ['Practical tutorials', 'High comment quality'] },
-      { creator: 'Autonomy Lab', score: 86, strengths: ['Architecture explainers', 'Strong title patterns'] }
-    ],
-    'AI Coding Workflows': [
-      { creator: 'Code Faster', score: 90, strengths: ['Developer hooks', 'Clear thumbnail system'] },
-      { creator: 'Cursor Builds', score: 87, strengths: ['Weekly launches', 'Strong audience requests loop'] },
-      { creator: 'Dev Velocity', score: 85, strengths: ['Hands-on series', 'Consistent engagement'] }
-    ]
+/**
+ * Themes whose recent-half velocity beats their older-half velocity, ranked by the
+ * growth ratio. A theme appearing only in the recent half is treated as emerging.
+ * Falls back to the top-theme ranking when the window is too small to split.
+ */
+function buildGrowthThemes(
+  videos: VideoSnapshot[],
+  channelAvgViews: number,
+  topThemes: ThemeGroup[]
+): ThemeGroup[] {
+  if (videos.length < 4) {
+    return topThemes;
+  }
+
+  const sorted = [...videos].sort(
+    (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+  );
+  const midpoint = Math.floor(sorted.length / 2);
+  const recentHalf = sorted.slice(0, midpoint);
+  const olderHalf = sorted.slice(midpoint);
+
+  const themeOf = (video: VideoSnapshot): string =>
+    knownNiches.find((niche) => video.title.toLowerCase().includes(niche.keyword))?.label ??
+    'General Strategy';
+
+  const averageByTheme = (subset: VideoSnapshot[]): Map<string, { velocity: number; titles: string[] }> => {
+    const buckets = new Map<string, { total: number; count: number; titles: string[] }>();
+    for (const video of subset) {
+      const theme = themeOf(video);
+      const bucket = buckets.get(theme) ?? { total: 0, count: 0, titles: [] };
+      bucket.total += getRelativeVelocity(video, channelAvgViews);
+      bucket.count += 1;
+      bucket.titles.push(video.title);
+      buckets.set(theme, bucket);
+    }
+    return new Map(
+      [...buckets.entries()].map(([theme, bucket]) => [
+        theme,
+        { velocity: bucket.total / bucket.count, titles: bucket.titles }
+      ])
+    );
   };
 
-  return (
-    defaults[niche] ?? [
-      { creator: 'Niche Studio', score: 88, strengths: ['Topic consistency', 'High-value formats'] },
-      { creator: 'Creator Systems', score: 85, strengths: ['Posting rhythm', 'Audience-driven ideas'] },
-      { creator: 'Growth Engineering', score: 83, strengths: ['Engagement loops', 'Strong hooks'] }
-    ]
-  );
+  const recent = averageByTheme(recentHalf);
+  const older = averageByTheme(olderHalf);
+
+  const growing = [...recent.entries()]
+    .map(([theme, recentStats]) => {
+      const olderVelocity = older.get(theme)?.velocity;
+      // Emerging themes (no older sample) rank by recent velocity alone.
+      const growthRatio = olderVelocity ? recentStats.velocity / Math.max(olderVelocity, 0.001) : recentStats.velocity + 1;
+      return {
+        name: theme,
+        velocity: Number(recentStats.velocity.toFixed(2)),
+        videoTitles: recentStats.titles.slice(0, 3),
+        growthRatio
+      };
+    })
+    .filter((theme) => theme.growthRatio > 1)
+    .sort((a, b) => b.growthRatio - a.growthRatio)
+    .slice(0, 3)
+    .map(({ growthRatio: _growthRatio, ...theme }) => theme);
+
+  return growing.length > 0 ? growing : topThemes;
 }
 
 function buildGaps(niche: string): string[] {
@@ -155,7 +202,7 @@ function buildFormatInsights(videos: VideoSnapshot[], channelAvgViews: number): 
 
   for (const video of videos) {
     const format = detectFormat(video.title);
-    const velocity = getVelocity(video, channelAvgViews);
+    const velocity = getRelativeVelocity(video, channelAvgViews);
     const existing = buckets.get(format) ?? { velocity: 0, titles: [], count: 0 };
     existing.velocity += velocity;
     existing.titles.push(video.title);
@@ -177,7 +224,7 @@ function buildTitlePatternInsights(videos: VideoSnapshot[], channelAvgViews: num
 
   for (const video of videos) {
     const pattern = detectTitlePattern(video.title);
-    const velocity = getVelocity(video, channelAvgViews);
+    const velocity = getRelativeVelocity(video, channelAvgViews);
     const existing = buckets.get(pattern) ?? { velocity: 0, titles: [], count: 0 };
     existing.velocity += velocity;
     existing.titles.push(video.title);
@@ -280,9 +327,7 @@ export async function runAnalysis(snapshot: ChannelSnapshot): Promise<AnalysisRe
   const postingPattern = buildPostingPattern(snapshot.videos);
   const engagement = buildEngagementInsight(snapshot.videos);
 
-  const fastestGrowing = [...topThemes]
-    .map((theme, index) => ({ ...theme, velocity: Number((theme.velocity + 0.25 * (2 - index)).toFixed(2)) }))
-    .sort((a, b) => b.velocity - a.velocity);
+  const fastestGrowing = buildGrowthThemes(snapshot.videos, channelAvgViews, topThemes);
 
   return {
     channel: {
@@ -300,7 +345,7 @@ export async function runAnalysis(snapshot: ChannelSnapshot): Promise<AnalysisRe
     engagement,
     contentGaps: buildGaps(niche),
     suggestedVideos: buildSuggestions(niche),
-    leaderBenchmarks: buildLeaderBenchmarks(niche),
+    recommendationSource: 'heuristic',
     generatedAt: new Date().toISOString()
   };
 }
