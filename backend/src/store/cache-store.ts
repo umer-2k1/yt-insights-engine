@@ -8,8 +8,10 @@ type CacheEntry<T> = {
 
 const channelCache = new Map<string, CacheEntry<ChannelSnapshot>>();
 const analysisCache = new Map<string, CacheEntry<AnalysisResult>>();
-const CHANNEL_CACHE_PREFIX = 'cache:channel:';
-const ANALYSIS_CACHE_PREFIX = 'cache:analysis:';
+// v2: snapshot/result shapes changed (structured comments, dataSource); the
+// version bump invalidates any stale v1 entries in a shared Redis.
+const CHANNEL_CACHE_PREFIX = 'cache:v2:channel:';
+const ANALYSIS_CACHE_PREFIX = 'cache:v2:analysis:';
 const CACHE_TTL_SECONDS = 24 * 60 * 60;
 const CACHE_TTL_MS = CACHE_TTL_SECONDS * 1000;
 // Bound the in-memory maps; entries for keys that are never requested again

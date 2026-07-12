@@ -20,7 +20,7 @@ function buildPrompt(snapshot: ChannelSnapshot, draft: AnalysisResult): string {
   const compactVideos = snapshot.videos.slice(0, 12).map((video) => ({
     title: video.title,
     views: video.views,
-    comments: video.sampleComments.slice(0, 2)
+    comments: video.sampleComments.slice(0, 2).map((comment) => comment.text)
   }));
 
   return JSON.stringify(

@@ -1,5 +1,15 @@
 export type CommentIntent = 'positive' | 'negative' | 'request' | 'question' | 'complaint';
 
+/** Provenance of ingested channel data: real YouTube API or labeled demo data. */
+export type DataSource = 'youtube' | 'demo';
+
+export type CommentSnapshot = {
+  commentId?: string;
+  text: string;
+  likeCount: number;
+  publishedAt?: string;
+};
+
 export type VideoSnapshot = {
   videoId: string;
   title: string;
@@ -8,7 +18,7 @@ export type VideoSnapshot = {
   views: number;
   likes: number;
   commentsCount: number;
-  sampleComments: string[];
+  sampleComments: CommentSnapshot[];
   transcriptSnippet?: string;
   thumbnailUrl?: string;
 };
@@ -17,6 +27,7 @@ export type ChannelSnapshot = {
   channelId: string;
   channelTitle: string;
   channelUrl: string;
+  dataSource: DataSource;
   videos: VideoSnapshot[];
 };
 
@@ -64,6 +75,7 @@ export type AnalysisResult = {
     url: string;
     niche: string;
   };
+  dataSource: DataSource;
   topPerformingThemes: ThemeGroup[];
   fastestGrowingThemes: ThemeGroup[];
   contentFormats: ContentFormatInsight[];

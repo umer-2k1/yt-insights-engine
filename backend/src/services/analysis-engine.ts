@@ -254,17 +254,18 @@ function buildEngagementInsight(videos: VideoSnapshot[]): EngagementInsight {
   );
 
   const comments = videos.flatMap((video) => video.sampleComments);
-  const intents = comments.map((comment) => classifyCommentIntent(comment));
-  const requestCount = intents.filter((intent) => intent === 'request').length;
+  const classified = comments.map((comment) => ({
+    text: comment.text,
+    intent: classifyCommentIntent(comment.text)
+  }));
+  const requests = classified.filter((entry) => entry.intent === 'request');
 
-  const topAudienceRequests = comments
-    .filter((comment) => classifyCommentIntent(comment) === 'request')
-    .slice(0, 3);
+  const topAudienceRequests = requests.slice(0, 3).map((entry) => entry.text);
 
   return {
     averageLikeRate: Number((totals.likes / Math.max(totals.views, 1)).toFixed(4)),
     averageCommentRate: Number((totals.comments / Math.max(totals.views, 1)).toFixed(4)),
-    requestCommentShare: Number((requestCount / Math.max(comments.length, 1)).toFixed(4)),
+    requestCommentShare: Number((requests.length / Math.max(comments.length, 1)).toFixed(4)),
     topAudienceRequests
   };
 }
@@ -290,6 +291,7 @@ export async function runAnalysis(snapshot: ChannelSnapshot): Promise<AnalysisRe
       url: snapshot.channelUrl,
       niche
     },
+    dataSource: snapshot.dataSource,
     topPerformingThemes: topThemes,
     fastestGrowingThemes: fastestGrowing,
     contentFormats,
