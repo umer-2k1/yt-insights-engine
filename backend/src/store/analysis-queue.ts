@@ -10,6 +10,7 @@ type QueuePayload = {
 const REDIS_QUEUE_KEY = 'queue:analysis:jobs';
 const memoryQueue: QueuePayload[] = [];
 let memoryWorkerActive = false;
+let pendingTick: NodeJS.Timeout | null = null;
 
 function parsePayload(raw: string): QueuePayload | null {
   try {
@@ -83,11 +84,21 @@ export function startAnalysisWorker(
     } catch {
       // Keep queue worker resilient; retry in next tick.
     } finally {
-      setTimeout(() => {
-        void run();
-      }, intervalMs);
+      if (memoryWorkerActive) {
+        pendingTick = setTimeout(() => {
+          void run();
+        }, intervalMs);
+      }
     }
   };
 
   void run();
+}
+
+export function stopAnalysisWorker(): void {
+  memoryWorkerActive = false;
+  if (pendingTick) {
+    clearTimeout(pendingTick);
+    pendingTick = null;
+  }
 }

@@ -70,11 +70,14 @@ function buildVideo(index: number, channelSeed: number): VideoSnapshot {
   const likes = Math.floor(views * 0.047);
   const commentsCount = Math.floor(views * 0.009);
   const publishedDaysAgo = Math.max(1, index * 3 + 2);
-  const comments = [commentPool[index % commentPool.length], commentPool[(index + 3) % commentPool.length]];
+  const comments = [
+    commentPool[index % commentPool.length],
+    commentPool[(index + 3) % commentPool.length]
+  ].filter((comment): comment is string => Boolean(comment));
 
   return {
     videoId: `video-${index + 1}`,
-    title: titleTemplates[index % titleTemplates.length],
+    title: titleTemplates[index % titleTemplates.length] ?? 'Untitled video',
     description: 'Practical creator-focused AI workflow content for engineering audiences.',
     publishedAt: daysAgo(publishedDaysAgo),
     views,
