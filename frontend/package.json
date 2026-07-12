@@ -1,20 +1,22 @@
 {
+  "name": "yt-insight-engine-frontend",
   "private": true,
   "license": "MIT",
   "type": "module",
   "author": {
-    "name": "Doinel Atanasiu",
-    "email": "doinel+github@atanasiu.me",
-    "url": "https://links.atanasiu.me"
+    "name": "umer-2k1",
+    "url": "https://github.com/umer-2k1"
   },
   "repository": {
     "type": "git",
-    "ur": "https://github.com/doinel1a/vite-react-ts-shadcn-ui"
+    "url": "https://github.com/umer-2k1/yt-insights-engine"
   },
   "packageManager": "pnpm@10.5.0",
+  "engines": {
+    "node": ">=20.19"
+  },
   "scripts": {
     "prepare": "husky",
-    "postinstall": "playwright install",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",

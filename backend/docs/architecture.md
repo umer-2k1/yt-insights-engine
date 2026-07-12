@@ -24,5 +24,5 @@
 
 ## Extensibility
 
-- Add new analysis nodes in LangGraph without rewriting the whole pipeline.
+- Add new analysis stages in the analysis engine without rewriting the whole pipeline.
 - Extend recommendation modules (thumbnail intelligence, title patterns, calendar generation) as separate phases.

@@ -1,4 +1,4 @@
-const BASE = 'VITE-REACT-TS-SHADCN-UI';
+const BASE = 'YT-INSIGHT-ENGINE';
 
 export const storageKeys = {
   theme: `${BASE}-THEME`
